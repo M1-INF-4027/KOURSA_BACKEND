@@ -1,6 +1,5 @@
 from django.db import models
-from academic.models.niveau import Niveau
-from users.models.utilisateur import Utilisateur
+from django.conf import settings
 
 class UniteEnseignement(models.Model):
     code_ue = models.CharField(max_length=20, unique=True, verbose_name="Code de l'UE")
@@ -9,15 +8,16 @@ class UniteEnseignement(models.Model):
 
     
     enseignants = models.ManyToManyField(
-        Utilisateur,
+        settings.AUTH_USER_MODEL,
         related_name='ues_enseignees',
-        limit_choices_to={'roles__nom_role': 'Enseignant'},
+        blank=True,
         verbose_name="Enseignants"
     )
 
     niveaux = models.ManyToManyField(
-        Niveau,
-        related_name='ues_proposees',
+        'academic.Niveau',
+        related_name='programme_ues',
+        blank=True,
         verbose_name="Niveaux concernés"
     )
 

@@ -1,3 +1,4 @@
-from  .departement import Departement
-from  .faculte import Faculte
+from .faculte import Faculte
+from .departement import Departement
+from .filiere import Filiere
 from .niveau import Niveau

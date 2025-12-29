@@ -1,5 +1,12 @@
 asgiref==3.11.0
 Django==6.0
+djangorestframework==3.16.1
+drf-yasg==1.21.11
+inflection==0.5.1
+packaging==25.0
+pytz==2025.2
+PyYAML==6.0.3
 simplejwt==2.0.1
 sqlparse==0.5.5
 typing==3.7.4.3
+uritemplate==4.2.0
