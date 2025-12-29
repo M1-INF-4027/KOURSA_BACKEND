@@ -1,0 +1,71 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Django stuff:
+*.log
+*.pot
+*.pyc
+*.pyo
+*.sqlite3
+db.sqlite3
+*.env
+.env
+media/
+staticfiles/
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+
+# VS Code
+.vscode/
+
+# Python virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# Distribution / packaging
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+sdist/
+develop-eggs/
+.installed.cfg
+*.egg-info/
+pip-wheel-metadata/
+share/python-wheels/
+__pypackages__/
+
+# Pytest
+.pytest_cache/
+.coverage
+.tox/
+.nox/
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# celery beat schedule file
+celerybeat-schedule
+
+# Django migrations
+*/migrations/*.py
+!*/migrations/__init__.py
