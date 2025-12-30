@@ -9,13 +9,13 @@ class RoleAdmin(admin.ModelAdmin):
 @admin.register(Utilisateur)
 class UtilisateurAdmin(UserAdmin):
     model = Utilisateur
+
     list_display = ('email', 'first_name', 'last_name', 'is_staff', 'statut')
     list_filter = ('is_staff', 'is_superuser', 'groups', 'statut')
     
     search_fields = ('email', 'first_name', 'last_name')
-    
     ordering = ('email',)
-    
+
     fieldsets = (
         (None, {'fields': ('email', 'password')}),
         ('Personal info', {'fields': ('first_name', 'last_name')}),
@@ -23,4 +23,15 @@ class UtilisateurAdmin(UserAdmin):
         ('Koursa Roles & Status', {'fields': ('roles', 'statut', 'niveau_represente')}),
         ('Important dates', {'fields': ('last_login', 'date_joined')}),
     )
+
+    add_fieldsets = (
+        (None, {
+            'classes': ('wide',),
+            'fields': (
+                'email', 'first_name', 'last_name', 'password1', 'password2',
+                'is_active', 'is_staff', 'is_superuser', 'roles', 'statut', 'niveau_represente'
+            ),
+        }),
+    )
+
     filter_horizontal = ('groups', 'user_permissions', 'roles')
