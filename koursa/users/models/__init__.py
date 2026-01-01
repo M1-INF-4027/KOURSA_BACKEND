@@ -1,2 +1,2 @@
-from .utilisateur import Utilisateur
 from .role import Role
+from .utilisateur import Utilisateur, StatutCompte

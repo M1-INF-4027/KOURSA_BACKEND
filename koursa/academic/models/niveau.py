@@ -1,25 +1,23 @@
 from django.db import models
-from .enum import EnumNiveau
-from .departement import Departement
+from .filiere import Filiere
 
 class Niveau(models.Model):
     nom_niveau = models.CharField(
-        max_length=10,
-        choices=EnumNiveau.choices,
+        max_length=50,
         verbose_name="Nom du Niveau"
     )
-    
-    departement = models.ForeignKey(
-        Departement, 
+
+    filiere = models.ForeignKey(
+        Filiere, 
         on_delete=models.CASCADE, 
-        related_name='niveaux',
-        verbose_name="Département de rattachement"
+        related_name='niveaux'
     )
 
     class Meta:
         verbose_name = "Niveau"
         verbose_name_plural = "Niveaux"
-        unique_together = ('nom_niveau', 'departement')
+        unique_together = ('nom_niveau', 'filiere')
+        ordering = ['nom_niveau']
 
     def __str__(self):
-        return f"{self.get_nom_niveau_display()} - {self.departement.nom_departement}"
+        return f"{self.nom_niveau} - {self.filiere.nom_filiere}"

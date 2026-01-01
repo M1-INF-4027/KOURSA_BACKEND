@@ -1,5 +1,37 @@
 from django.contrib import admin
-from .models import *
+from django.contrib.auth.admin import UserAdmin
+from .models import Utilisateur, Role
 
-for model in [Role,Utilisateur]:
-    admin.site.register(model)
+@admin.register(Role)
+class RoleAdmin(admin.ModelAdmin):
+    list_display = ('nom_role',)
+
+@admin.register(Utilisateur)
+class UtilisateurAdmin(UserAdmin):
+    model = Utilisateur
+
+    list_display = ('email', 'first_name', 'last_name', 'is_staff', 'statut')
+    list_filter = ('is_staff', 'is_superuser', 'groups', 'statut')
+    
+    search_fields = ('email', 'first_name', 'last_name')
+    ordering = ('email',)
+
+    fieldsets = (
+        (None, {'fields': ('email', 'password')}),
+        ('Personal info', {'fields': ('first_name', 'last_name')}),
+        ('Permissions', {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
+        ('Koursa Roles & Status', {'fields': ('roles', 'statut', 'niveau_represente')}),
+        ('Important dates', {'fields': ('last_login', 'date_joined')}),
+    )
+
+    add_fieldsets = (
+        (None, {
+            'classes': ('wide',),
+            'fields': (
+                'email', 'first_name', 'last_name', 'password1', 'password2',
+                'is_active', 'is_staff', 'is_superuser', 'roles', 'statut', 'niveau_represente'
+            ),
+        }),
+    )
+
+    filter_horizontal = ('groups', 'user_permissions', 'roles')
