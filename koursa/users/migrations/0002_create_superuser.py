@@ -1,5 +1,6 @@
 from django.db import migrations
 import os
+from django.contrib.auth.hashers import make_password
 
 def create_superuser(apps, schema_editor):
     Utilisateur = apps.get_model('users', 'Utilisateur')
@@ -10,16 +11,18 @@ def create_superuser(apps, schema_editor):
     if SUPERUSER_EMAIL and SUPERUSER_PASSWORD:
         if not Utilisateur.objects.filter(email=SUPERUSER_EMAIL).exists():
             print(f"Création du super-utilisateur avec l'email : {SUPERUSER_EMAIL}")
-            user = Utilisateur.objects.create(
+            
+            hashed_password = make_password(SUPERUSER_PASSWORD)
+            
+            Utilisateur.objects.create(
                 email=SUPERUSER_EMAIL,
+                password=hashed_password,  
                 first_name='Admin',
                 last_name='Koursa',
-                is_staff=True,       
-                is_superuser=True,  
-                statut='ACTIF'       
+                is_staff=True,
+                is_superuser=True,
+                statut='ACTIF'
             )
-            user.set_password(SUPERUSER_PASSWORD)
-            user.save()
             
         else:
             print(f"Le super-utilisateur avec l'email {SUPERUSER_EMAIL} existe déjà.")
