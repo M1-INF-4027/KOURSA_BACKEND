@@ -24,3 +24,6 @@ class FicheSuiviSerializer(serializers.ModelSerializer):
             'date_soumission', 'date_validation'
         ]
         read_only_fields = ['duree', 'statut', 'date_soumission', 'date_validation']
+
+class ValidationTokenSerializer(serializers.Serializer):
+    validation_token = serializers.CharField()

@@ -54,6 +54,13 @@ class Utilisateur(AbstractUser):
         blank=True,
         related_name='delegues'
     )
+
+    fcm_token = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        verbose_name="Token de l'appareil pour les notifs"
+    )
     
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['first_name', 'last_name']

@@ -71,3 +71,6 @@ celerybeat-schedule
 #*/migrations/*.py
 #!*/migrations/__init__.py
 **/migrations/__pycache__/
+
+# Les secret_files
+firebase-credentials.json
