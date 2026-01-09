@@ -16,6 +16,14 @@ bash
 python3 -m venv .env
 source .env/bin/activate
 
+# Activation de l'environnement virtuel
+## Windows (PowerShell)
+.env\Scripts\Activate.ps1
+## Windows (CMD)
+.env\Scripts\activate.bat
+## Linux/Mac
+source .env/bin/activate
+
 
 bash
 pip install -r requirements.txt

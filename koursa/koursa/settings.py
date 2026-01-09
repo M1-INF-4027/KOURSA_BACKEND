@@ -8,6 +8,10 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Charger les variables d'environnement depuis le fichier .env
+ENV_FILE = Path(__file__).resolve().parent / '.env'
+load_dotenv(ENV_FILE)
+
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-valeur-par-defaut-pour-le-dev')
 
 DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
@@ -25,14 +29,18 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
-    'whitenoise.runserver_nostatic', 
+    'whitenoise.runserver_nostatic',
     'django.contrib.staticfiles',
 
+    # Third-party apps
     'rest_framework',
     'django_filters',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
+    'corsheaders',
     'drf_yasg',
+
+    # Local apps
 
     'users',
     'academic',
@@ -42,7 +50,8 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware', 
+    'whitenoise.middleware.WhiteNoiseMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -50,6 +59,18 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+# CORS Configuration
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+# En developpement, autoriser toutes les origines
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
 
 ROOT_URLCONF = 'koursa.urls'
 
@@ -133,7 +154,14 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+# WhiteNoise pour les fichiers statiques
+if DEBUG:
+    # En developpement, utiliser le stockage simple
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
+else:
+    # En production, utiliser le manifest pour le cache
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 AUTH_USER_MODEL = 'users.Utilisateur'
 
