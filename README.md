@@ -6,9 +6,12 @@ Backend API REST pour la plateforme **Koursa** - Systeme de gestion academique e
 
 | Technologie | Version | Description |
 |-------------|---------|-------------|
-| Python | 3.x | Langage de programmation |
+| Python | 3.10+ | Langage de programmation |
 | Django | 6.0 | Framework web |
 | Django REST Framework | 3.16.1 | API REST |
+| Django Filter | 25.2 | Filtrage des querysets |
+| Django CORS Headers | 4.3.1 | Gestion CORS |
+| Simple JWT | 5.5.1 | Authentification JWT |
 | PostgreSQL | - | Base de donnees (production) |
 | SQLite | - | Base de donnees (developpement) |
 | drf-yasg | 1.21.11 | Documentation Swagger/OpenAPI |
@@ -29,6 +32,7 @@ KOURSA_BACKEND/
 │   ├── users/               # Application Utilisateurs
 │   ├── academic/            # Application Academique
 │   ├── teaching/            # Application Enseignement
+│   ├── dashboard/           # Application Dashboard
 │   ├── .env/                # Environnement virtuel Python
 │   ├── manage.py
 │   ├── requirements.txt
@@ -36,6 +40,51 @@ KOURSA_BACKEND/
 ├── LICENSE
 └── README.md
 ```
+
+---
+
+## Authentification
+
+L'API utilise **JWT (JSON Web Tokens)** pour l'authentification.
+
+### Endpoints d'authentification
+
+| Methode | Endpoint | Description |
+|---------|----------|-------------|
+| POST | `/api/auth/token/` | Obtenir un token JWT (login) |
+| POST | `/api/auth/token/refresh/` | Rafraichir le token |
+
+### Exemple de login
+
+```bash
+curl -X POST http://localhost:8000/api/auth/token/ \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com", "password": "motdepasse"}'
+```
+
+**Reponse:**
+```json
+{
+  "access": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+  "refresh": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+  "user": {
+    "id": 1,
+    "email": "user@example.com",
+    "first_name": "John",
+    "last_name": "Doe",
+    "roles": [{"id": 1, "nom_role": "Enseignant"}]
+  }
+}
+```
+
+### Utilisation du token
+
+```bash
+curl -X GET http://localhost:8000/api/users/utilisateurs/ \
+  -H "Authorization: Bearer <access_token>"
+```
+
+---
 
 ## Applications
 
@@ -59,6 +108,12 @@ KOURSA_BACKEND/
   - `statut` : Statut du compte (`EN_ATTENTE`, `ACTIF`, `INACTIF`)
   - `roles` : Relation ManyToMany vers Role
   - `niveau_represente` : ForeignKey vers Niveau (pour les delegues)
+  - `fcm_token` : Token Firebase pour notifications push
+
+#### Logique metier
+- **Enseignants** : Statut `ACTIF` automatiquement a l'inscription
+- **Autres roles** : Statut `EN_ATTENTE` (activation par admin requise)
+- **Delegues** : `niveau_represente` obligatoire
 
 #### Endpoints API
 
@@ -147,14 +202,28 @@ Faculte
 - `date_soumission` / `date_validation` : Timestamps
 
 #### Types de seances
-- `CM` : Cours Magistral
-- `TD` : Travaux Diriges
-- `TP` : Travaux Pratiques
+| Code | Description |
+|------|-------------|
+| `CM` | Cours Magistral |
+| `TD` | Travaux Diriges |
+| `TP` | Travaux Pratiques |
 
 #### Statuts des fiches
-- `SOUMISE` : En attente de validation
-- `VALIDEE` : Validee par l'enseignant
-- `REFUSEE` : Refusee (avec motif)
+| Statut | Description |
+|--------|-------------|
+| `SOUMISE` | En attente de validation |
+| `VALIDEE` | Validee par l'enseignant |
+| `REFUSEE` | Refusee (avec motif) |
+
+#### Permissions
+
+| Permission | Description |
+|------------|-------------|
+| `IsAuthenticated` | Utilisateur authentifie |
+| `IsDelegue` | Role Delegue requis |
+| `IsDelegueAuteur` | Auteur de la fiche |
+| `IsEnseignantConcerne` | Enseignant assigne a l'UE |
+| `IsFicheModifiable` | Fiche en statut SOUMISE |
 
 #### Endpoints API
 
@@ -165,8 +234,29 @@ Faculte
 | GET/POST | `/api/teaching/fiches-suivi/` | Liste/Creation fiches |
 | GET/PUT/PATCH/DELETE | `/api/teaching/fiches-suivi/{id}/` | CRUD fiche |
 | POST | `/api/teaching/fiches-suivi/{id}/valider/` | Valider une fiche |
-| POST | `/api/teaching/fiches-suivi/{id}/refuser/` | Refuser une fiche (avec motif) |
-| GET | `/api/teaching/fiches-suivi/en-attente/` | Fiches en attente de validation |
+| POST | `/api/teaching/fiches-suivi/{id}/refuser/` | Refuser une fiche |
+| GET | `/api/teaching/fiches-suivi/en-attente/` | Fiches en attente |
+
+#### Filtres disponibles
+
+Les fiches de suivi peuvent etre filtrees par:
+- `statut` : SOUMISE, VALIDEE, REFUSEE
+- `date_cours` : Date du cours
+- `enseignant` : ID de l'enseignant
+- `delegue` : ID du delegue
+- `ue` : ID de l'unite d'enseignement
+
+Exemple: `/api/teaching/fiches-suivi/?statut=SOUMISE&ue=1`
+
+---
+
+### 4. Dashboard
+
+#### Endpoints API
+
+| Methode | Endpoint | Description |
+|---------|----------|-------------|
+| GET | `/api/dashboard/` | Statistiques du dashboard |
 
 ---
 
@@ -191,8 +281,8 @@ Accessible via `/admin/`
 
 | URL | Description |
 |-----|-------------|
-| `/swagger/` | Interface Swagger UI |
-| `/redoc/` | Interface ReDoc |
+| `/swagger/` | Interface Swagger UI (interactive) |
+| `/redoc/` | Interface ReDoc (documentation) |
 
 ---
 
@@ -207,7 +297,7 @@ Accessible via `/admin/`
 
 1. **Cloner le repository**
 ```bash
-git clone <url-du-repo>
+git clone https://github.com/M1-INF-4027/KOURSA_BACKEND.git
 cd KOURSA_BACKEND/koursa
 ```
 
@@ -248,6 +338,16 @@ python manage.py createsuperuser
 python manage.py runserver
 ```
 
+Le serveur sera accessible sur http://127.0.0.1:8000/
+
+---
+
+## Configuration CORS
+
+Le backend est configure pour accepter les requetes cross-origin. En mode developpement (`DEBUG=True`), toutes les origines sont autorisees.
+
+En production, configurez `CORS_ALLOWED_ORIGINS` dans settings.py.
+
 ---
 
 ## Deploiement (Render)
@@ -273,19 +373,21 @@ RENDER_EXTERNAL_HOSTNAME=<hostname-render>
 ```
 Django==6.0
 djangorestframework==3.16.1
+djangorestframework-simplejwt==5.5.1
+django-filter==25.2
+django-cors-headers==4.3.1
 drf-yasg==1.21.11
 dj-database-url==3.0.1
 psycopg2-binary==2.9.11
 gunicorn==23.0.0
 whitenoise==6.11.0
 python-dotenv==1.2.1
-simplejwt==2.0.1
 ```
 
 ---
 
 ## Licence
 
-MIT License - Copyright (c) 2025 M1 INF 4027
+Apache License 2.0 - Copyright (c) 2025 M1 INF 4027
 
 Voir le fichier [LICENSE](LICENSE) pour plus de details.
