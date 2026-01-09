@@ -1,16 +1,8 @@
-"""
-WSGI config for koursa project.
-
-It exposes the WSGI callable as a module-level variable named ``application``.
-
-For more information on this file, see
-https://docs.djangoproject.com/en/6.0/howto/deployment/wsgi/
-"""
-
 import os
-
 from django.core.wsgi import get_wsgi_application
+from .firebase_config import initialize_firebase 
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'koursa.settings')
+initialize_firebase()
 
 application = get_wsgi_application()
