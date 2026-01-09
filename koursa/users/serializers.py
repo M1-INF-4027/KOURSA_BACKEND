@@ -9,13 +9,14 @@ class RoleSerializer(serializers.ModelSerializer):
 class UtilisateurSerializer(serializers.ModelSerializer):
     roles = RoleSerializer(many=True, read_only=True)
     roles_ids = serializers.PrimaryKeyRelatedField(
-        many=True, 
-        queryset=Role.objects.all(), 
-        write_only=True, 
-        source='roles'
+        many=True,
+        queryset=Role.objects.all(),
+        write_only=True,
+        source='roles',
+        required=False
     )
-    
-    password = serializers.CharField(write_only=True)
+
+    password = serializers.CharField(write_only=True, required=False)
 
     class Meta:
         model = Utilisateur
@@ -25,20 +26,28 @@ class UtilisateurSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['statut']
 
+    def validate(self, attrs):
+        # Password obligatoire uniquement a la creation
+        if not self.instance and not attrs.get('password'):
+            raise serializers.ValidationError({
+                'password': 'Le mot de passe est obligatoire lors de la creation.'
+            })
+        return attrs
+
     def create(self, validated_data):
-        roles_data = validated_data.pop('roles')
-        
+        roles_data = validated_data.pop('roles', [])
+
         user = Utilisateur.objects.create_user(**validated_data)
-        
+
         if roles_data:
             user.roles.set(roles_data)
-            
+
         return user
 
     def update(self, instance, validated_data):
         password = validated_data.pop('password', None)
-        
-        # Gère la mise à jour des rôles si elle est fournie
+
+        # Gere la mise a jour des roles si elle est fournie
         roles_data = validated_data.pop('roles', None)
         if roles_data is not None:
             instance.roles.set(roles_data)
@@ -47,6 +56,6 @@ class UtilisateurSerializer(serializers.ModelSerializer):
 
         if password:
             instance.set_password(password)
-        
-        instance.save()
+            instance.save()
+
         return instance

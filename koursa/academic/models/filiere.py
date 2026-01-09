@@ -15,3 +15,6 @@ class Filiere(models.Model):
         verbose_name_plural = "Filières"
         unique_together = ('nom_filiere', 'departement')
         ordering = ['nom_filiere']
+
+    def __str__(self):
+        return self.nom_filiere
