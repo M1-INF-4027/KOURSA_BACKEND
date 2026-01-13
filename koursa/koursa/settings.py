@@ -18,8 +18,12 @@ DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
 
 ALLOWED_HOSTS = []
 RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+ALLOWED_HOSTS_ENV = os.environ.get('ALLOWED_HOSTS', '')
+
 if RENDER_EXTERNAL_HOSTNAME:
     ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
+elif ALLOWED_HOSTS_ENV:
+    ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS_ENV.split(',')]
 else:
     ALLOWED_HOSTS.extend(['127.0.0.1', 'localhost'])
 
