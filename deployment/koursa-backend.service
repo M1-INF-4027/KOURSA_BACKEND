@@ -6,12 +6,12 @@ After=network.target
 Type=notify
 User=www-data
 Group=www-data
-WorkingDirectory=/var/www/koursa-backend/koursa
-Environment="PATH=/var/www/koursa-backend/venv/bin"
-EnvironmentFile=/var/www/koursa-backend/koursa/.env
-ExecStart=/var/www/koursa-backend/venv/bin/gunicorn \
+WorkingDirectory=/var/www/koursa-backend/KOURSA_BACKEND/koursa
+Environment="PATH=/var/www/koursa-backend/KOURSA_BACKEND/koursa/venv/bin"
+EnvironmentFile=/var/www/koursa-backend/KOURSA_BACKEND/koursa/.env
+ExecStart=/var/www/koursa-backend/KOURSA_BACKEND/koursa/venv/bin/gunicorn \
     --workers 3 \
-    --bind 127.0.0.1:8001 \
+    --bind 127.0.0.1:8002 \
     --timeout 120 \
     --access-logfile /var/log/koursa-backend/access.log \
     --error-logfile /var/log/koursa-backend/error.log \

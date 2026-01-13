@@ -8,8 +8,8 @@ set -e
 echo "Début du déploiement de Koursa Backend..."
 
 # Variables
-PROJECT_DIR="/var/www/koursa-backend"
-VENV_DIR="$PROJECT_DIR/venv"
+PROJECT_DIR="/var/www/koursa-backend/KOURSA_BACKEND"
+VENV_DIR="$PROJECT_DIR/koursa/venv"
 APP_DIR="$PROJECT_DIR/koursa"
 
 # Activer l'environnement virtuel

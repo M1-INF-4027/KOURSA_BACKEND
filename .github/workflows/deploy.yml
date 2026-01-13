@@ -20,9 +20,10 @@ jobs:
         script: |
           cd /var/www/koursa-backend
           git pull origin main
+          cd KOURSA_BACKEND/koursa
           source venv/bin/activate
-          pip install -r koursa/requirements.txt
-          python koursa/manage.py migrate --noinput
-          python koursa/manage.py collectstatic --noinput
+          pip install -r requirements.txt
+          python manage.py migrate --noinput
+          python manage.py collectstatic --noinput
           sudo systemctl restart koursa-backend
           echo "Déploiement terminé avec succès!"
