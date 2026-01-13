@@ -76,6 +76,13 @@ CORS_ALLOWED_ORIGINS = [
 if DEBUG:
     CORS_ALLOW_ALL_ORIGINS = True
 
+# Configuration CSRF pour accès via IP
+CSRF_TRUSTED_ORIGINS = [
+    'http://84.247.183.206:8082',
+    'http://127.0.0.1:8082',
+    'http://localhost:8082',
+]
+
 ROOT_URLCONF = 'koursa.urls'
 
 TEMPLATES = [

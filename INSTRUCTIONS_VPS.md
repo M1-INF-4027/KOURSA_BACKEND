@@ -144,7 +144,7 @@ nano /var/www/koursa-backend/koursa/.env
 Copiez et modifiez ceci (remplacez YOUR_SECRET_KEY par celle générée):
 
 ```env
-SECRET_KEY=m9xcx(r$4^dhl1d1c^*l8jq(^_@m@$7&ek1bv$112r4+pfit=e
+SECRET_KEY=k18t%645(j3+3aan7j+c@()@r-7ygs+od%_h6$tz++fcbziirj
 DEBUG=False
 DATABASE_URL=postgresql://koursa_user:Koursa2026@Secure!@localhost:5432/koursa_db
 ALLOWED_HOSTS=84.247.183.206
