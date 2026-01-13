@@ -2,6 +2,38 @@
 
 Backend API REST pour la plateforme **Koursa** - Systeme de gestion academique et de suivi pedagogique.
 
+## 🚀 Déploiement Production
+
+### Configuration VPS Actuelle
+
+- **URL API:** http://84.247.183.206:8082
+- **Admin Django:** http://84.247.183.206:8082/admin/
+- **Documentation Swagger:** http://84.247.183.206:8082/swagger/
+- **Serveur:** 84.247.183.206 (softengine)
+- **Ports:** 8082 (externe) / 8002 (interne)
+- **Base de données:** PostgreSQL (koursa_db / koursa_user)
+- **CI/CD:** GitHub Actions (déploiement automatique sur push main)
+
+### Guides de Déploiement
+
+📁 **Fichiers disponibles:**
+- **[INSTRUCTIONS_FINALES.md](INSTRUCTIONS_FINALES.md)** - Guide complet étape par étape (RECOMMANDÉ)
+- **[QUICKSTART.md](QUICKSTART.md)** - Démarrage rapide en 3 étapes
+- **[INSTRUCTIONS_VPS.md](INSTRUCTIONS_VPS.md)** - Instructions détaillées pour le VPS
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Guide de déploiement générique
+- **[LISEZ_MOI.md](LISEZ_MOI.md)** - Vue d'ensemble en français
+
+### Déploiement Manuel
+
+```bash
+cd /var/www/koursa-backend
+git pull origin main
+cd KOURSA_BACKEND
+./deploy.sh
+```
+
+---
+
 ## Technologies utilisees
 
 | Technologie | Version | Description |

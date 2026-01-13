@@ -49,9 +49,9 @@ Le fichier **INSTRUCTIONS_VPS.md** contient toutes les commandes à copier-colle
 Une fois tout configuré:
 
 1. **Déploiement automatique**: À chaque `git push origin main`, votre application se déploie automatiquement
-2. **Accès à l'API**: `http://84.247.183.206:8080`
-3. **Admin Django**: `http://84.247.183.206:8080/admin/`
-4. **Documentation**: `http://84.247.183.206:8080/swagger/` (si configuré)
+2. **Accès à l'API**: `http://84.247.183.206:8082`
+3. **Admin Django**: `http://84.247.183.206:8082/admin/`
+4. **Documentation**: `http://84.247.183.206:8082/swagger/` (si configuré)
 
 ## Architecture du déploiement
 
@@ -72,9 +72,9 @@ Une fois tout configuré:
 │   VPS Server    │
 │  84.247.183.206 │
 ├─────────────────┤
-│   Nginx :8080   │ ← Vous accédez ici
+│   Nginx :8082   │ ← Vous accédez ici
 │       ↓         │
-│  Gunicorn :8001 │
+│  Gunicorn :8002 │
 │       ↓         │
 │ Django App      │
 │       ↓         │
@@ -126,7 +126,7 @@ git push origin main
 # Vérifier sur: GitHub → Actions
 
 # 5. Vérifier le déploiement
-curl http://84.247.183.206:8080
+curl http://84.247.183.206:8082
 ```
 
 **C'est tout! Bon déploiement!** 🚀

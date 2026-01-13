@@ -71,7 +71,7 @@ sudo apt install -y python3 python3-pip python3-venv postgresql postgresql-contr
 # 3. Configurer PostgreSQL
 sudo -u postgres psql << EOF
 CREATE DATABASE koursa_db;
-CREATE USER koursa_user WITH PASSWORD 'Koursa2026@Secure!';
+CREATE USER koursa_user WITH PASSWORD 'koursa2026';
 ALTER ROLE koursa_user SET client_encoding TO 'utf8';
 ALTER ROLE koursa_user SET default_transaction_isolation TO 'read committed';
 ALTER ROLE koursa_user SET timezone TO 'UTC';
@@ -93,7 +93,7 @@ pip install -r koursa/requirements.txt
 cat > /var/www/koursa-backend/koursa/.env << 'EOF'
 SECRET_KEY=$(python3 -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")
 DEBUG=False
-DATABASE_URL=postgresql://koursa_user:Koursa2026@Secure!@localhost:5432/koursa_db
+DATABASE_URL=postgresql://koursa_user:koursa2026@localhost:5432/koursa_db
 ALLOWED_HOSTS=84.247.183.206
 EOF
 

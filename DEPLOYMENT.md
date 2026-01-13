@@ -2,6 +2,8 @@
 
 Ce guide vous explique comment déployer le backend Koursa sur votre VPS avec CI/CD automatique.
 
+**Note:** Ce projet utilise les ports **8082** (externe) et **8002** (interne). Si ces ports sont occupés sur votre serveur, modifiez les fichiers de configuration en conséquence.
+
 ## Prérequis sur votre VPS
 
 - Ubuntu/Debian (ou distribution similaire)

@@ -146,7 +146,7 @@ Copiez et modifiez ceci (remplacez YOUR_SECRET_KEY par celle générée):
 ```env
 SECRET_KEY=k18t%645(j3+3aan7j+c@()@r-7ygs+od%_h6$tz++fcbziirj
 DEBUG=False
-DATABASE_URL=postgresql://koursa_user:Koursa2026@Secure!@localhost:5432/koursa_db
+DATABASE_URL=postgresql://koursa_user:koursa2026@localhost:5432/koursa_db
 ALLOWED_HOSTS=84.247.183.206
 ```
 
@@ -372,7 +372,7 @@ sudo netstat -tlnp | grep 8001
 
 ```bash
 psql -U koursa_user -d koursa_db -h localhost
-# Mot de passe: Koursa2026@Secure!
+# Mot de passe: koursa2026
 ```
 
 ### Permission denied sur le déploiement
