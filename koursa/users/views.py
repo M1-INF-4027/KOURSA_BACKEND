@@ -38,9 +38,15 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
 
     def perform_destroy(self, instance):
         user = self.request.user
+        # Un Chef de Département ne peut supprimer que des délégués de son département
         if user.roles.filter(nom_role=Role.CHEF_DEPARTEMENT).exists():
             if not instance.roles.filter(nom_role=Role.DELEGUE).exists():
-                pass
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("Vous ne pouvez supprimer que des délégués.")
+            # Vérifier que le délégué appartient au département du chef
+            if hasattr(user, 'departement_gere') and user.departement_gere:
+                if instance.niveau_represente and instance.niveau_represente.filiere.departement != user.departement_gere:
+                    raise PermissionDenied("Ce délégué n'appartient pas à votre département.")
         instance.delete()
 
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated], url_path='confirm-password')
@@ -67,23 +73,33 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'], permission_classes=[IsHoD], url_path='approuver-delegue')
     def approuver_delegue(self, request, pk=None):
-        
+        """Approuver un délégué en attente de validation"""
         hod = request.user
-        
+
         try:
             delegue_a_approuver = self.get_object()
         except Utilisateur.DoesNotExist:
             return Response({"detail": "Utilisateur non trouvé."}, status=status.HTTP_404_NOT_FOUND)
 
+        # Vérifier que c'est un délégué en attente
         if not delegue_a_approuver.roles.filter(nom_role=Role.DELEGUE).exists() or delegue_a_approuver.statut != StatutCompte.EN_ATTENTE:
             return Response({"detail": "Cet utilisateur n'est pas un délégué en attente de validation."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Vérifier que le délégué a un niveau représenté
+        if not delegue_a_approuver.niveau_represente:
+            return Response({"detail": "Ce délégué n'a pas de niveau représenté assigné."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Vérifier que le chef de département gère un département
+        if not hasattr(hod, 'departement_gere') or not hod.departement_gere:
+            return Response({"detail": "Vous n'êtes assigné à aucun département."}, status=status.HTTP_403_FORBIDDEN)
+
+        # Vérifier que le délégué appartient au département du chef
         if delegue_a_approuver.niveau_represente.filiere.departement != hod.departement_gere:
             return Response({"detail": "Vous n'avez pas la permission d'approuver un délégué de ce département."}, status=status.HTTP_403_FORBIDDEN)
-        
+
         delegue_a_approuver.statut = StatutCompte.ACTIF
         delegue_a_approuver.save()
-                
+
         serializer = self.get_serializer(delegue_a_approuver)
         return Response(serializer.data, status=status.HTTP_200_OK)
     

@@ -6,11 +6,12 @@ Backend API REST pour la plateforme **Koursa** - Systeme de gestion academique e
 
 ### Configuration VPS Actuelle
 
-- **URL API:** http://84.247.183.206:8082
-- **Admin Django:** http://84.247.183.206:8082/admin/
-- **Documentation Swagger:** http://84.247.183.206:8082/swagger/
+- **URL API:** https://koursa.duckdns.org
+- **Admin Django:** https://koursa.duckdns.org/admin/
+- **Documentation Swagger:** https://koursa.duckdns.org/swagger/
+- **Domaine:** koursa.duckdns.org (DuckDNS)
 - **Serveur:** 84.247.183.206 (softengine)
-- **Ports:** 8082 (externe) / 8002 (interne)
+- **SSL:** Let's Encrypt (renouvellement automatique via Certbot)
 - **Base de données:** PostgreSQL (koursa_db / koursa_user)
 - **CI/CD:** GitHub Actions (déploiement automatique sur push main)
 

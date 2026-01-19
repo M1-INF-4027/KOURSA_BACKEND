@@ -1,6 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework import status
 from users.permissions import IsHoD
 from teaching.models import FicheSuivi, StatutFiche
 from academic.models import Departement
@@ -10,6 +11,25 @@ from datetime import datetime, timedelta
 from django.http import HttpResponse
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
+
+
+class DashboardRootView(APIView):
+    """Vue racine du dashboard - redirige vers les endpoints disponibles"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        return Response({
+            "message": "Bienvenue sur le Dashboard Koursa",
+            "endpoints": {
+                "stats": "/api/dashboard/stats/",
+                "export_heures": "/api/dashboard/export-heures/"
+            },
+            "description": {
+                "stats": "Statistiques du département (Chef de Département uniquement)",
+                "export_heures": "Export Excel des heures par enseignant (Chef de Département uniquement)"
+            }
+        })
+
 
 class DashboardStatsView(APIView):
     permission_classes = [IsAuthenticated, IsHoD]
@@ -21,8 +41,8 @@ class DashboardStatsView(APIView):
             departement = Departement.objects.get(chef_departement=hod)
         except Departement.DoesNotExist:
             return Response(
-                {"detail": "Vous avez le rôle de Chef de Département, mais vous n'êtes assigné à aucun département."}, 
-                status=403 
+                {"detail": "Vous avez le rôle de Chef de Département, mais vous n'êtes assigné à aucun département."},
+                status=status.HTTP_404_NOT_FOUND
             )
 
 
@@ -74,13 +94,13 @@ class ExportHeuresView(APIView):
         try:
             departement = Departement.objects.get(chef_departement=hod)
         except Departement.DoesNotExist:
-            return Response({"detail": "Vous n'êtes assigné à aucun département."}, status=403)
+            return Response({"detail": "Vous n'êtes assigné à aucun département."}, status=status.HTTP_404_NOT_FOUND)
 
         try:
             year = int(request.query_params.get('annee', datetime.now().year))
             month = int(request.query_params.get('mois', datetime.now().month))
         except (ValueError, TypeError):
-            return Response({"detail": "Les paramètres 'annee' et 'mois' doivent être des nombres valides."}, status=400)
+            return Response({"detail": "Les paramètres 'annee' et 'mois' doivent être des nombres valides."}, status=status.HTTP_400_BAD_REQUEST)
 
         heures_par_enseignant = FicheSuivi.objects.filter(
             ue__niveaux__filiere__departement=departement,

@@ -7,7 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
 from django.db.models import Q
 from users.models import Role
-from users.permissions import IsEnseignantConcerne, IsFicheModifiable, IsDelegueAuteur
+from users.permissions import IsEnseignantConcerne, IsFicheModifiable, IsDelegueAuteur, IsDelegue
 from .models import UniteEnseignement, FicheSuivi, StatutFiche
 from .serializers import (
     UniteEnseignementSerializer,
