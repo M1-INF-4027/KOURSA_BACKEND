@@ -27,7 +27,12 @@ elif ALLOWED_HOSTS_ENV:
 else:
     ALLOWED_HOSTS.extend(['127.0.0.1', 'localhost'])
 
+# En mode DEBUG, autoriser l'acces depuis le reseau local (appareils physiques)
+if DEBUG:
+    ALLOWED_HOSTS.extend(['0.0.0.0', '192.168.1.198', '*'])
+
 INSTALLED_APPS = [
+    'jazzmin',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -177,3 +182,116 @@ else:
 AUTH_USER_MODEL = 'users.Utilisateur'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Repertoire des fichiers statiques supplementaires
+STATICFILES_DIRS = [
+    BASE_DIR / 'static',
+]
+
+# ─────────────────────────────────────────────
+# JAZZMIN - Theme admin moderne
+# ─────────────────────────────────────────────
+
+JAZZMIN_SETTINGS = {
+    # Titre et branding
+    "site_title": "Koursa Admin",
+    "site_header": "Koursa",
+    "site_brand": "Koursa",
+    "site_logo": None,
+    "login_logo": None,
+    "site_logo_classes": "img-circle",
+    "site_icon": None,
+    "welcome_sign": "Bienvenue sur Koursa Admin",
+    "copyright": "Koursa",
+
+    # Recherche dans les modeles
+    "search_model": ["users.Utilisateur", "academic.Faculte"],
+
+    # Lien utilisateur en haut
+    "user_avatar": None,
+
+    # Navigation superieure
+    "topmenu_links": [
+        {"name": "Accueil", "url": "admin:index", "permissions": ["auth.view_user"]},
+        {"name": "API Docs", "url": "/swagger/", "new_window": True},
+        {"app": "users"},
+    ],
+
+    # Navigation sidebar - menus personnalises
+    "show_sidebar": True,
+    "navigation_expanded": True,
+    "hide_apps": [],
+    "hide_models": [],
+
+    # Icones pour chaque app et modele
+    "icons": {
+        "auth": "fas fa-users-cog",
+        "auth.user": "fas fa-user",
+        "auth.Group": "fas fa-users",
+        "users": "fas fa-user-shield",
+        "users.Utilisateur": "fas fa-user-graduate",
+        "users.Role": "fas fa-user-tag",
+        "users.EnseignantWhitelist": "fas fa-clipboard-list",
+        "academic": "fas fa-university",
+        "academic.Faculte": "fas fa-building-columns",
+        "academic.Departement": "fas fa-sitemap",
+        "academic.Filiere": "fas fa-graduation-cap",
+        "academic.Niveau": "fas fa-layer-group",
+        "teaching": "fas fa-chalkboard-teacher",
+        "teaching.UniteEnseignement": "fas fa-book",
+        "teaching.FicheSuivi": "fas fa-clipboard-check",
+        "dashboard": "fas fa-chart-line",
+        "rest_framework_simplejwt.token_blacklist": "fas fa-ban",
+    },
+
+    # Icone par defaut
+    "default_icon_parents": "fas fa-folder",
+    "default_icon_children": "fas fa-circle",
+
+    # Liens en bas du menu
+    "related_modal_active": False,
+
+    # UI Tweaks
+    "custom_css": "admin/css/koursa_admin.css",
+    "custom_js": None,
+    "use_google_fonts_cdn": True,
+    "show_ui_builder": False,
+
+    # Changer le texte du lien de retour
+    "changeform_format": "horizontal_tabs",
+    "changeform_format_overrides": {
+        "users.Utilisateur": "collapsible",
+    },
+}
+
+JAZZMIN_UI_TWEAKS = {
+    "navbar_small_text": False,
+    "footer_small_text": False,
+    "body_small_text": False,
+    "brand_small_text": False,
+    "brand_colour": False,
+    "accent": "accent-primary",
+    "navbar": "navbar-dark",
+    "no_navbar_border": False,
+    "navbar_fixed": True,
+    "layout_boxed": False,
+    "footer_fixed": False,
+    "sidebar_fixed": True,
+    "sidebar": "sidebar-dark-primary",
+    "sidebar_nav_small_text": False,
+    "sidebar_disable_expand": False,
+    "sidebar_nav_child_indent": False,
+    "sidebar_nav_compact_style": False,
+    "sidebar_nav_legacy_style": False,
+    "sidebar_nav_flat_style": False,
+    "theme": "flatly",
+    "dark_mode_theme": None,
+    "button_classes": {
+        "primary": "btn-primary",
+        "secondary": "btn-secondary",
+        "info": "btn-info",
+        "warning": "btn-warning",
+        "danger": "btn-danger",
+        "success": "btn-success",
+    },
+}

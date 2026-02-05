@@ -1,0 +1,200 @@
+/* ═══════════════════════════════════════════════
+   Koursa Admin - Custom Theme Colors
+   Primary:   #0019A6 (bleu fonce)
+   Secondary: #4596F4 (bleu clair)
+   Accent:    #F7B016 (jaune/orange)
+   ═══════════════════════════════════════════════ */
+
+/* --- Navbar --- */
+.main-header.navbar {
+    background-color: #0019A6 !important;
+    border-bottom: 3px solid #F7B016;
+}
+
+.main-header.navbar .nav-link,
+.main-header.navbar .navbar-nav .nav-link {
+    color: #ffffff !important;
+}
+
+.main-header.navbar .nav-link:hover {
+    color: #F7B016 !important;
+}
+
+/* --- Sidebar --- */
+.main-sidebar,
+.main-sidebar .brand-link {
+    background-color: #0a1433 !important;
+}
+
+.main-sidebar .brand-link {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.main-sidebar .brand-text {
+    color: #F7B016 !important;
+    font-weight: 700;
+    font-size: 1.2rem;
+}
+
+.sidebar-dark-primary .nav-sidebar > .nav-item > .nav-link.active,
+.sidebar-dark-primary .nav-sidebar > .nav-item > .nav-link:hover {
+    background-color: #0019A6 !important;
+    color: #ffffff !important;
+}
+
+.sidebar-dark-primary .nav-sidebar .nav-link {
+    color: rgba(255, 255, 255, 0.8) !important;
+}
+
+.sidebar-dark-primary .nav-sidebar .nav-link:hover {
+    color: #ffffff !important;
+}
+
+.nav-sidebar .nav-header {
+    color: #F7B016 !important;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+}
+
+/* --- Liens et boutons --- */
+a {
+    color: #0019A6;
+}
+
+a:hover {
+    color: #4596F4;
+}
+
+.btn-primary,
+.btn-primary:focus {
+    background-color: #0019A6 !important;
+    border-color: #0019A6 !important;
+}
+
+.btn-primary:hover {
+    background-color: #001580 !important;
+    border-color: #001580 !important;
+}
+
+.btn-info,
+.btn-info:focus {
+    background-color: #4596F4 !important;
+    border-color: #4596F4 !important;
+}
+
+.btn-info:hover {
+    background-color: #2d80e0 !important;
+    border-color: #2d80e0 !important;
+}
+
+.btn-warning,
+.btn-warning:focus {
+    background-color: #F7B016 !important;
+    border-color: #F7B016 !important;
+    color: #0a1433 !important;
+}
+
+/* --- Login page --- */
+.login-page {
+    background: linear-gradient(135deg, #0019A6 0%, #0a1433 100%) !important;
+}
+
+.login-box .card {
+    border-top: 4px solid #F7B016;
+}
+
+.login-box .btn-primary {
+    background-color: #0019A6 !important;
+    border-color: #0019A6 !important;
+}
+
+.login-box .btn-primary:hover {
+    background-color: #4596F4 !important;
+    border-color: #4596F4 !important;
+}
+
+/* --- Content header / breadcrumb --- */
+.content-header h1 {
+    color: #0019A6;
+}
+
+/* --- Cards et widgets --- */
+.card.card-primary:not(.card-outline) > .card-header {
+    background-color: #0019A6 !important;
+}
+
+.card.card-primary.card-outline {
+    border-top-color: #0019A6 !important;
+}
+
+/* --- Tables --- */
+.table thead th {
+    background-color: #f0f4ff;
+    color: #0019A6;
+    border-bottom: 2px solid #0019A6;
+}
+
+.table-hover tbody tr:hover {
+    background-color: #e8f0fe;
+}
+
+/* --- Pagination active --- */
+.page-item.active .page-link {
+    background-color: #0019A6 !important;
+    border-color: #0019A6 !important;
+}
+
+.page-link {
+    color: #0019A6;
+}
+
+.page-link:hover {
+    color: #4596F4;
+}
+
+/* --- Badge et small-box --- */
+.badge-primary {
+    background-color: #0019A6 !important;
+}
+
+.badge-info {
+    background-color: #4596F4 !important;
+}
+
+.badge-warning {
+    background-color: #F7B016 !important;
+    color: #0a1433 !important;
+}
+
+.small-box.bg-primary {
+    background-color: #0019A6 !important;
+}
+
+.small-box.bg-info {
+    background-color: #4596F4 !important;
+}
+
+.small-box.bg-warning {
+    background-color: #F7B016 !important;
+}
+
+/* --- Progress bars --- */
+.progress-bar {
+    background-color: #0019A6;
+}
+
+.progress-bar.bg-info {
+    background-color: #4596F4 !important;
+}
+
+/* --- Selection / focus --- */
+.form-control:focus {
+    border-color: #4596F4;
+    box-shadow: 0 0 0 0.2rem rgba(69, 150, 244, 0.25);
+}
+
+/* --- Footer --- */
+.main-footer {
+    border-top: 2px solid #F7B016;
+}
