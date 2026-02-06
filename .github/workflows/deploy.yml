@@ -29,12 +29,12 @@ jobs:
           git clone --depth 1 --branch main $REPO_URL $TEMP_DIR
 
           echo "=== Copie des fichiers vers $APP_DIR ==="
-          rsync -rlt --no-group --no-owner \
-            --exclude='venv/' \
-            --exclude='.env' \
-            --exclude='staticfiles/' \
-            --exclude='__pycache__/' \
-            $TEMP_DIR/koursa/ $APP_DIR/KOURSA_BACKEND/koursa/
+          cd $TEMP_DIR/koursa
+          for item in $(ls -A); do
+            if [ "$item" != "venv" ] && [ "$item" != ".env" ] && [ "$item" != "staticfiles" ]; then
+              cp -rf "$item" "$APP_DIR/KOURSA_BACKEND/koursa/$item"
+            fi
+          done
 
           rm -rf $TEMP_DIR
 
