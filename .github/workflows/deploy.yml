@@ -26,11 +26,12 @@ jobs:
           # Vérifier si c'est un repo git, sinon initialiser
           if [ ! -d "$APP_DIR/.git" ]; then
             echo "=== Pas de repo git, initialisation ==="
+            sudo chown -R $(whoami):$(whoami) $APP_DIR
             cd $APP_DIR
             git init
             git remote add origin $REPO_URL || git remote set-url origin $REPO_URL
             git fetch origin main
-            git checkout -f main || git reset --hard origin/main
+            git reset --hard origin/main
           else
             echo "=== Repo git existant, mise à jour ==="
             cd $APP_DIR
