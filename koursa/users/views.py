@@ -3,7 +3,7 @@ from .models import Utilisateur, Role, StatutCompte, EnseignantWhitelist
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.tokens import AccessToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .permissions import IsHoD, IsSuperAdmin, IsAdminOrIsSelf
@@ -145,7 +145,7 @@ class RoleViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
-            permission_classes = [IsAuthenticated]
+            permission_classes = [AllowAny]
         else:
             permission_classes = [IsSuperAdmin]
         return [permission() for permission in permission_classes]

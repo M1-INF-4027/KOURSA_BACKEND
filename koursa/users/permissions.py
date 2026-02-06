@@ -45,12 +45,16 @@ class IsFicheModifiable(BasePermission):
 class IsAdminOrIsSelf(BasePermission):
 
     def has_permission(self, request, view):
+        # Permettre l'inscription sans authentification
+        if view.action == 'create':
+            return True
+
         if view.action == 'list':
             return request.user.is_authenticated and (
                 request.user.roles.filter(nom_role=Role.SUPER_ADMIN).exists() or
                 request.user.roles.filter(nom_role=Role.CHEF_DEPARTEMENT).exists()
             )
-        
+
         return request.user.is_authenticated
 
     def has_object_permission(self, request, view, obj):

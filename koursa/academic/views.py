@@ -1,5 +1,5 @@
 from rest_framework import viewsets
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from users.permissions import IsSuperAdmin
 from .models import Faculte, Departement, Filiere, Niveau
 from .serializers import FaculteSerializer, DepartementSerializer, FiliereSerializer, NiveauSerializer
@@ -44,7 +44,7 @@ class NiveauViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
-            permission_classes = [IsAuthenticated]
-        else: 
+            permission_classes = [AllowAny]
+        else:
             permission_classes = [IsSuperAdmin]
         return [permission() for permission in permission_classes]
