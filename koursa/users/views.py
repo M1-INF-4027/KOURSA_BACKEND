@@ -126,6 +126,11 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
     
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated], url_path='me')
+    def me(self, request):
+        serializer = self.get_serializer(request.user)
+        return Response(serializer.data)
+
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated], url_path='register-fcm-token')
     def register_fcm_token(self, request):
         fcm_token = request.data.get('fcm_token')

@@ -29,9 +29,10 @@ class UtilisateurSerializer(serializers.ModelSerializer):
         model = Utilisateur
         fields = [
             'id', 'email', 'first_name', 'last_name', 'password',
-            'statut', 'roles', 'roles_ids', 'niveau_represente', 'fcm_token'
+            'statut', 'roles', 'roles_ids', 'niveau_represente', 'fcm_token',
+            'is_superuser'
         ]
-        read_only_fields = ['statut']
+        read_only_fields = ['statut', 'is_superuser']
 
     def validate(self, attrs):
         # Password obligatoire uniquement a la creation

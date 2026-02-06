@@ -15,6 +15,7 @@ from .serializers import (
     ValidationTokenSerializer,
     ValidationFicheSerializer
 )
+from koursa.firebase_config import send_notification
 
 
 class UniteEnseignementViewSet(viewsets.ModelViewSet):
@@ -56,6 +57,9 @@ class FicheSuiviViewSet(viewsets.ModelViewSet):
 
         elif self.action in ['valider', 'refuser']:
             permission_classes.append(IsEnseignantConcerne)
+
+        elif self.action == 'resoumettre':
+            permission_classes.append(IsDelegueAuteur)
 
         return [permission() for permission in permission_classes]
 
@@ -112,6 +116,13 @@ class FicheSuiviViewSet(viewsets.ModelViewSet):
         fiche.motif_refus = ""
         fiche.save()
 
+        if fiche.delegue and fiche.delegue.fcm_token:
+            send_notification(
+                fiche.delegue.fcm_token,
+                "Fiche validee",
+                f"Votre fiche pour {fiche.ue.code_ue} a ete validee."
+            )
+
         return Response(self.get_serializer(fiche).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], url_path='refuser')
@@ -136,6 +147,39 @@ class FicheSuiviViewSet(viewsets.ModelViewSet):
         fiche.motif_refus = motif
         fiche.date_validation = timezone.now()
         fiche.save()
+
+        if fiche.delegue and fiche.delegue.fcm_token:
+            send_notification(
+                fiche.delegue.fcm_token,
+                "Fiche refusee",
+                f"Votre fiche pour {fiche.ue.code_ue} a ete refusee. Motif: {motif}"
+            )
+
+        return Response(self.get_serializer(fiche).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], url_path='resoumettre')
+    def resoumettre(self, request, pk=None):
+        """Resoumettre une fiche refusee"""
+        fiche = self.get_object()
+
+        if fiche.statut != StatutFiche.REFUSEE:
+            return Response(
+                {"detail": "Seule une fiche refusee peut etre resoumise."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        fiche.statut = StatutFiche.SOUMISE
+        fiche.motif_refus = ""
+        fiche.date_validation = None
+        fiche.save()
+
+        if fiche.enseignant and fiche.enseignant.fcm_token:
+            delegue_name = fiche.delegue.get_full_name() if fiche.delegue else "Un delegue"
+            send_notification(
+                fiche.enseignant.fcm_token,
+                "Fiche resoumise",
+                f"{delegue_name} a resoumis une fiche pour {fiche.ue.code_ue}."
+            )
 
         return Response(self.get_serializer(fiche).data, status=status.HTTP_200_OK)
 
