@@ -50,10 +50,7 @@ class IsAdminOrIsSelf(BasePermission):
             return True
 
         if view.action == 'list':
-            return request.user.is_authenticated and (
-                request.user.roles.filter(nom_role=Role.SUPER_ADMIN).exists() or
-                request.user.roles.filter(nom_role=Role.CHEF_DEPARTEMENT).exists()
-            )
+            return request.user.is_authenticated
 
         return request.user.is_authenticated
 
