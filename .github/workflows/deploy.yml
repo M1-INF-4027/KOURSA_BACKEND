@@ -22,28 +22,24 @@ jobs:
           set -e
           APP_DIR="/var/www/koursa-backend"
           REPO_URL="https://github.com/M1-INF-4027/KOURSA_BACKEND.git"
+          TEMP_DIR="$HOME/koursa-deploy-temp"
 
-          # Vérifier si c'est un repo git, sinon initialiser
-          if [ ! -d "$APP_DIR/.git" ]; then
-            echo "=== Pas de repo git, initialisation ==="
-            sudo chown -R $(whoami):$(whoami) $APP_DIR
-            cd $APP_DIR
-            git init
-            git remote add origin $REPO_URL || git remote set-url origin $REPO_URL
-            git fetch origin main
-            git reset --hard origin/main
-          else
-            echo "=== Repo git existant, mise à jour ==="
-            cd $APP_DIR
-            git checkout .
-            git clean -fd
-            git pull origin main
-          fi
+          echo "=== Clonage dans dossier temporaire ==="
+          rm -rf $TEMP_DIR
+          git clone --depth 1 --branch main $REPO_URL $TEMP_DIR
 
-          echo "=== Derniers commits ==="
-          git log --oneline -3
+          echo "=== Copie des fichiers vers $APP_DIR ==="
+          rsync -a \
+            --exclude='venv/' \
+            --exclude='.env' \
+            --exclude='staticfiles/' \
+            --exclude='__pycache__/' \
+            $TEMP_DIR/KOURSA_BACKEND/koursa/ $APP_DIR/KOURSA_BACKEND/koursa/
 
-          cd KOURSA_BACKEND/koursa
+          rm -rf $TEMP_DIR
+
+          echo "=== Installation des dépendances ==="
+          cd $APP_DIR/KOURSA_BACKEND/koursa
           source venv/bin/activate
           pip install -r requirements.txt
           python manage.py migrate --noinput
