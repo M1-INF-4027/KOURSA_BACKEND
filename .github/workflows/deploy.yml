@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -19,7 +20,15 @@ jobs:
         port: ${{ secrets.VPS_PORT }}
         script: |
           cd /var/www/koursa-backend
+          echo "=== Git status avant pull ==="
+          git status
+          echo "=== Reset des modifications locales ==="
+          git checkout .
+          git clean -fd
+          echo "=== Pull depuis main ==="
           git pull origin main
+          echo "=== Vérification du pull ==="
+          git log --oneline -3
           cd KOURSA_BACKEND/koursa
           source venv/bin/activate
           pip install -r requirements.txt
