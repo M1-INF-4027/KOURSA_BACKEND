@@ -30,9 +30,9 @@ class UtilisateurSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'email', 'first_name', 'last_name', 'password',
             'statut', 'roles', 'roles_ids', 'niveau_represente', 'fcm_token',
-            'is_superuser'
+            'is_superuser', 'is_staff'
         ]
-        read_only_fields = ['statut', 'is_superuser']
+        read_only_fields = ['statut', 'is_superuser', 'is_staff']
 
     def validate(self, attrs):
         # Password obligatoire uniquement a la creation
@@ -101,6 +101,12 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
 
     def validate(self, attrs):
         data = super().validate(attrs)
+
+        # Auto-assign Super Administrateur role to Django superusers
+        if self.user.is_superuser and not self.user.roles.exists():
+            admin_role = Role.objects.filter(nom_role=Role.SUPER_ADMIN).first()
+            if admin_role:
+                self.user.roles.add(admin_role)
 
         serializer = UtilisateurSerializer(self.user)
         data['user'] = serializer.data
