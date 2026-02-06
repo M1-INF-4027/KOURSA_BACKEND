@@ -20,6 +20,7 @@ from .serializers import (
 class UniteEnseignementViewSet(viewsets.ModelViewSet):
     queryset = UniteEnseignement.objects.prefetch_related('enseignants', 'niveaux').all()
     serializer_class = UniteEnseignementSerializer
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         user = self.request.user
