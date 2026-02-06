@@ -34,7 +34,7 @@ jobs:
             --exclude='.env' \
             --exclude='staticfiles/' \
             --exclude='__pycache__/' \
-            $TEMP_DIR/KOURSA_BACKEND/koursa/ $APP_DIR/KOURSA_BACKEND/koursa/
+            $TEMP_DIR/koursa/ $APP_DIR/KOURSA_BACKEND/koursa/
 
           rm -rf $TEMP_DIR
 
