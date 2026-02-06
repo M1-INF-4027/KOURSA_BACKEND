@@ -29,7 +29,7 @@ jobs:
           git clone --depth 1 --branch main $REPO_URL $TEMP_DIR
 
           echo "=== Copie des fichiers vers $APP_DIR ==="
-          rsync -a \
+          rsync -rlt --no-group --no-owner \
             --exclude='venv/' \
             --exclude='.env' \
             --exclude='staticfiles/' \
