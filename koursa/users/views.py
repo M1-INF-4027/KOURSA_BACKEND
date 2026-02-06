@@ -108,7 +108,7 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         
         email = serializer.validated_data.get('email')
-        roles_ids = [role.id for role in serializer.validated_data.get('roles')]
+        roles_ids = [role.id for role in serializer.validated_data.get('roles', [])]
         
         try:
             role_enseignant_id = Role.objects.get(nom_role=Role.ENSEIGNANT).id
