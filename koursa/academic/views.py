@@ -33,8 +33,8 @@ class FiliereViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
-            permission_classes = [IsAuthenticated]
-        else: 
+            permission_classes = [AllowAny]
+        else:
             permission_classes = [IsSuperAdmin]
         return [permission() for permission in permission_classes]
 
