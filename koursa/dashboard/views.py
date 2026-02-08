@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from users.permissions import IsHoD
 from teaching.models import FicheSuivi, StatutFiche
-from academic.models import Departement
+from academic.models import Departement, Filiere, Niveau
 from users.models import Utilisateur, Role
 from django.db.models import Sum, Count
 from datetime import datetime, timedelta
@@ -50,11 +50,17 @@ def get_departement(user):
         return None
 
 
-def get_fiches_queryset(departement, date_debut=None, date_fin=None):
+def get_fiches_queryset(departement, date_debut=None, date_fin=None, filiere_id=None, niveau_id=None, semestre=None):
     qs = FicheSuivi.objects.filter(
         ue__niveaux__filiere__departement=departement,
         statut=StatutFiche.VALIDEE,
     ).select_related('ue', 'enseignant').distinct()
+    if filiere_id:
+        qs = qs.filter(ue__niveaux__filiere_id=filiere_id)
+    if niveau_id:
+        qs = qs.filter(ue__niveaux__id=niveau_id)
+    if semestre:
+        qs = qs.filter(ue__semestre=semestre)
     if date_debut:
         qs = qs.filter(date_cours__gte=date_debut)
     if date_fin:
@@ -76,6 +82,37 @@ def parse_dates(request):
             status=status.HTTP_400_BAD_REQUEST
         )
     return date_debut, date_fin, None
+
+
+def parse_filters(request):
+    filiere_id = request.query_params.get('filiere')
+    niveau_id = request.query_params.get('niveau')
+    semestre = request.query_params.get('semestre')
+    try:
+        filiere_id = int(filiere_id) if filiere_id else None
+        niveau_id = int(niveau_id) if niveau_id else None
+        semestre = int(semestre) if semestre else None
+    except (ValueError, TypeError):
+        filiere_id, niveau_id, semestre = None, None, None
+    return filiere_id, niveau_id, semestre
+
+
+def get_niveau_label(niveau_id, filiere_id, departement):
+    """Build a label like INF_M1_S1 for filenames"""
+    parts = []
+    if filiere_id:
+        try:
+            filiere = Filiere.objects.get(id=filiere_id, departement=departement)
+            parts.append(filiere.nom_filiere.replace(' ', '_'))
+        except Filiere.DoesNotExist:
+            pass
+    if niveau_id:
+        try:
+            niveau = Niveau.objects.get(id=niveau_id)
+            parts.append(niveau.nom_niveau.replace(' ', '_'))
+        except Niveau.DoesNotExist:
+            pass
+    return '_'.join(parts) if parts else ''
 
 
 def format_horaire(fiche):
@@ -183,31 +220,48 @@ class DashboardStatsView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
+        filiere_id, niveau_id, semestre = parse_filters(request)
+
         current_month = datetime.now().month
         current_year = datetime.now().year
 
+        # Base queryset filtered by dept + niveau/filiere/semestre
+        base_filter = {
+            'ue__niveaux__filiere__departement': departement,
+        }
+        if filiere_id:
+            base_filter['ue__niveaux__filiere_id'] = filiere_id
+        if niveau_id:
+            base_filter['ue__niveaux__id'] = niveau_id
+        if semestre:
+            base_filter['ue__semestre'] = semestre
+
         heures_validees_mois = FicheSuivi.objects.filter(
-            ue__niveaux__filiere__departement=departement,
+            **base_filter,
             statut=StatutFiche.VALIDEE,
             date_cours__year=current_year,
             date_cours__month=current_month
-        ).aggregate(total_heures=Sum('duree'))['total_heures'] or timedelta(0)
+        ).distinct().aggregate(total_heures=Sum('duree'))['total_heures'] or timedelta(0)
 
         cutoff_date = datetime.now() - timedelta(days=2)
         fiches_en_retard = FicheSuivi.objects.filter(
-            ue__niveaux__filiere__departement=departement,
+            **base_filter,
             statut=StatutFiche.SOUMISE,
             date_soumission__lt=cutoff_date
-        ).count()
+        ).distinct().count()
 
         heures_par_ue = FicheSuivi.objects.filter(
-            ue__niveaux__filiere__departement=departement,
+            **base_filter,
             statut=StatutFiche.VALIDEE,
             date_cours__year=current_year,
             date_cours__month=current_month
-        ).values('ue__code_ue', 'ue__libelle_ue').annotate(
+        ).distinct().values('ue__code_ue', 'ue__libelle_ue').annotate(
             total_duree=Sum('duree')
         ).order_by('-total_duree')
+
+        # Filieres et niveaux disponibles pour les selecteurs
+        filieres = Filiere.objects.filter(departement=departement).order_by('nom_filiere')
+        niveaux = Niveau.objects.filter(filiere__departement=departement).select_related('filiere').order_by('filiere__nom_filiere', 'nom_niveau')
 
         data = {
             'heures_validees_ce_mois': round(heures_validees_mois.total_seconds() / 3600, 2),
@@ -218,7 +272,13 @@ class DashboardStatsView(APIView):
                     'libelle_ue': item['ue__libelle_ue'],
                     'heures_effectuees': round(item['total_duree'].total_seconds() / 3600, 2)
                 } for item in heures_par_ue
-            ]
+            ],
+            'filieres': [
+                {'id': f.id, 'nom': f.nom_filiere} for f in filieres
+            ],
+            'niveaux': [
+                {'id': n.id, 'nom': n.nom_niveau, 'filiere_id': n.filiere_id, 'filiere_nom': n.filiere.nom_filiere} for n in niveaux
+            ],
         }
 
         return Response(data)
@@ -237,7 +297,8 @@ class RecapitulatifView(APIView):
         if error:
             return error
 
-        fiches = get_fiches_queryset(departement, date_debut, date_fin)
+        filiere_id, niveau_id, semestre = parse_filters(request)
+        fiches = get_fiches_queryset(departement, date_debut, date_fin, filiere_id, niveau_id, semestre)
 
         # Par UE
         par_ue = fiches.values('ue__code_ue', 'ue__libelle_ue').annotate(
@@ -254,6 +315,10 @@ class RecapitulatifView(APIView):
         ).order_by('enseignant__last_name')
 
         total_heures_global = fiches.aggregate(t=Sum('duree'))['t'] or timedelta(0)
+
+        # Filieres et niveaux disponibles pour ce departement
+        filieres = Filiere.objects.filter(departement=departement).order_by('nom_filiere')
+        niveaux = Niveau.objects.filter(filiere__departement=departement).select_related('filiere').order_by('filiere__nom_filiere', 'nom_niveau')
 
         data = {
             'total_heures': round(total_heures_global.total_seconds() / 3600, 2),
@@ -274,6 +339,12 @@ class RecapitulatifView(APIView):
                     'nb_fiches': item['nb_fiches'],
                 } for item in par_enseignant
             ],
+            'filieres': [
+                {'id': f.id, 'nom': f.nom_filiere} for f in filieres
+            ],
+            'niveaux': [
+                {'id': n.id, 'nom': n.nom_niveau, 'filiere_id': n.filiere_id, 'filiere_nom': n.filiere.nom_filiere} for n in niveaux
+            ],
         }
 
         return Response(data)
@@ -292,16 +363,26 @@ class ExportBilanView(APIView):
         if error:
             return error
 
-        fiches = get_fiches_queryset(departement, date_debut, date_fin)
+        filiere_id, niveau_id, semestre = parse_filters(request)
+        fiches = get_fiches_queryset(departement, date_debut, date_fin, filiere_id, niveau_id, semestre)
 
         wb = Workbook()
         ws = wb.active
-        period = ""
-        if date_debut and date_fin:
-            period = f"_{date_debut}_{date_fin}"
-        write_bilan_sheet(ws, fiches, title="Bilan des cours")
 
-        filename = f"bilan_cours_{departement.nom_departement.lower().replace(' ', '_')}{period}.xlsx"
+        # Build filename like: BILAN_DES_COURS_INF_M1_S1_2025-2026.xlsx
+        name_parts = ["BILAN_DES_COURS"]
+        level_label = get_niveau_label(niveau_id, filiere_id, departement)
+        if level_label:
+            name_parts.append(level_label)
+        if semestre:
+            name_parts.append(f"S{semestre}")
+        if date_debut and date_fin:
+            name_parts.append(f"{date_debut}_{date_fin}")
+
+        sheet_title = ' '.join(["Bilan des cours"] + ([level_label] if level_label else []))
+        write_bilan_sheet(ws, fiches, title=sheet_title[:31])
+
+        filename = '_'.join(name_parts) + '.xlsx'
         return excel_response(wb, filename)
 
 
@@ -318,8 +399,9 @@ class ExportParUEView(APIView):
         if error:
             return error
 
+        filiere_id, niveau_id, semestre = parse_filters(request)
         ue_id = request.query_params.get('ue')
-        fiches = get_fiches_queryset(departement, date_debut, date_fin)
+        fiches = get_fiches_queryset(departement, date_debut, date_fin, filiere_id, niveau_id, semestre)
 
         wb = Workbook()
         # Remove default sheet
@@ -390,8 +472,9 @@ class ExportParEnseignantView(APIView):
         if error:
             return error
 
+        filiere_id, niveau_id, semestre = parse_filters(request)
         enseignant_id = request.query_params.get('enseignant')
-        fiches = get_fiches_queryset(departement, date_debut, date_fin)
+        fiches = get_fiches_queryset(departement, date_debut, date_fin, filiere_id, niveau_id, semestre)
 
         wb = Workbook()
         wb.remove(wb.active)
