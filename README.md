@@ -5,7 +5,7 @@ Backend API REST pour la plateforme **Koursa** - Systeme de gestion academique e
 ## Deploiement Production
 
 - **URL API:** https://koursa.duckdns.org/api/
-- **Admin Django:** https://koursa.duckdns.org/admin/
+- **Admin Django:** https://koursa.duckdns.org/django-admin/
 - **Documentation Swagger:** https://koursa.duckdns.org/swagger/
 - **Serveur:** 84.247.183.206 (softengine)
 - **SSL:** Let's Encrypt (renouvellement automatique via Certbot)
