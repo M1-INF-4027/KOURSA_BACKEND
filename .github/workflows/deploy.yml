@@ -38,6 +38,9 @@ jobs:
 
           rm -rf $TEMP_DIR
 
+          echo "=== Nettoyage du cache Python ==="
+          find $APP_DIR/KOURSA_BACKEND/koursa -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+
           echo "=== Installation des dépendances ==="
           cd $APP_DIR/KOURSA_BACKEND/koursa
           source venv/bin/activate
