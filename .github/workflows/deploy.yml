@@ -29,23 +29,24 @@ jobs:
           git clone --depth 1 --branch main $REPO_URL $TEMP_DIR
 
           echo "=== Copie des fichiers vers $APP_DIR ==="
+          DEST="$APP_DIR/KOURSA_BACKEND/koursa"
           cd $TEMP_DIR/koursa
-          sudo cp -rf users/ "$APP_DIR/KOURSA_BACKEND/koursa/users/"
-          sudo cp -rf koursa/ "$APP_DIR/KOURSA_BACKEND/koursa/koursa/"
-          sudo cp -rf academic/ "$APP_DIR/KOURSA_BACKEND/koursa/academic/"
-          sudo cp -rf teaching/ "$APP_DIR/KOURSA_BACKEND/koursa/teaching/"
-          sudo cp -rf dashboard/ "$APP_DIR/KOURSA_BACKEND/koursa/dashboard/"
-          sudo cp -rf manage.py "$APP_DIR/KOURSA_BACKEND/koursa/manage.py"
-          sudo cp -rf requirements.txt "$APP_DIR/KOURSA_BACKEND/koursa/requirements.txt"
+          for item in $(ls -A); do
+            if [ "$item" != "venv" ] && [ "$item" != ".env" ] && [ "$item" != "staticfiles" ] && [ "$item" != "db.sqlite3" ]; then
+              cp -rf "$item" "$DEST/$item"
+              echo "  Copie: $item"
+            fi
+          done
 
           rm -rf $TEMP_DIR
 
           echo "=== Nettoyage du cache Python ==="
-          sudo find $APP_DIR/KOURSA_BACKEND/koursa -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+          find $DEST -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
           echo "=== Verification du code deploye ==="
-          grep -c "EnseignantWhitelist" $APP_DIR/KOURSA_BACKEND/koursa/users/views.py || echo "OK: whitelist supprimee de views.py"
-          grep -c "approuver" $APP_DIR/KOURSA_BACKEND/koursa/users/views.py || echo "ERREUR: approuver absent"
+          head -15 $DEST/users/views.py
+          echo "---"
+          grep -c "approuver" $DEST/users/views.py && echo "OK: approuver present" || echo "ERREUR: approuver absent"
 
           echo "=== Installation des dépendances ==="
           cd $APP_DIR/KOURSA_BACKEND/koursa
