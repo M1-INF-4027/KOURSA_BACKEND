@@ -7,7 +7,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from .models import Utilisateur, Role, StatutCompte
 from .permissions import IsHoD, IsSuperAdmin, IsAdminOrIsSelf
 from datetime import timedelta
-from .serializers import UtilisateurSerializer, RoleSerializer, PasswordConfirmationSerializer, MyTokenObtainPairSerializer
+from .serializers import UtilisateurSerializer, RoleSerializer, PasswordConfirmationSerializer, ChangePasswordSerializer, MyTokenObtainPairSerializer
 from teaching.models import UniteEnseignement
 
 class UtilisateurViewSet(viewsets.ModelViewSet):
@@ -141,6 +141,19 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
     def me(self, request):
         serializer = self.get_serializer(request.user)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated], url_path='change-password')
+    def change_password(self, request):
+        serializer = ChangePasswordSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        if not request.user.check_password(serializer.validated_data['old_password']):
+            return Response({"detail": "Ancien mot de passe incorrect."}, status=status.HTTP_403_FORBIDDEN)
+
+        request.user.set_password(serializer.validated_data['new_password'])
+        request.user.save()
+        return Response({"detail": "Mot de passe modifié avec succès."}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated], url_path='register-fcm-token')
     def register_fcm_token(self, request):
