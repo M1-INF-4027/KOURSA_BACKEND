@@ -2,36 +2,15 @@
 
 Backend API REST pour la plateforme **Koursa** - Systeme de gestion academique et de suivi pedagogique.
 
-## 🚀 Déploiement Production
+## Deploiement Production
 
-### Configuration VPS Actuelle
-
-- **URL API:** https://koursa.duckdns.org
+- **URL API:** https://koursa.duckdns.org/api/
 - **Admin Django:** https://koursa.duckdns.org/admin/
 - **Documentation Swagger:** https://koursa.duckdns.org/swagger/
-- **Domaine:** koursa.duckdns.org (DuckDNS)
 - **Serveur:** 84.247.183.206 (softengine)
 - **SSL:** Let's Encrypt (renouvellement automatique via Certbot)
-- **Base de données:** PostgreSQL (koursa_db / koursa_user)
-- **CI/CD:** GitHub Actions (déploiement automatique sur push main)
-
-### Guides de Déploiement
-
-📁 **Fichiers disponibles:**
-- **[INSTRUCTIONS_FINALES.md](INSTRUCTIONS_FINALES.md)** - Guide complet étape par étape (RECOMMANDÉ)
-- **[QUICKSTART.md](QUICKSTART.md)** - Démarrage rapide en 3 étapes
-- **[INSTRUCTIONS_VPS.md](INSTRUCTIONS_VPS.md)** - Instructions détaillées pour le VPS
-- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Guide de déploiement générique
-- **[LISEZ_MOI.md](LISEZ_MOI.md)** - Vue d'ensemble en français
-
-### Déploiement Manuel
-
-```bash
-cd /var/www/koursa-backend
-git pull origin main
-cd KOURSA_BACKEND
-./deploy.sh
-```
+- **Base de donnees:** PostgreSQL (koursa_db / koursa_user)
+- **CI/CD:** GitHub Actions (deploiement automatique sur push main)
 
 ---
 
@@ -63,14 +42,12 @@ KOURSA_BACKEND/
 │   │   ├── wsgi.py
 │   │   └── asgi.py
 │   ├── users/               # Application Utilisateurs
-│   ├── academic/            # Application Academique
+│   ├── academic/            # Application Structure Academique
 │   ├── teaching/            # Application Enseignement
 │   ├── dashboard/           # Application Dashboard
-│   ├── .env/                # Environnement virtuel Python
 │   ├── manage.py
-│   ├── requirements.txt
-│   └── build.sh
-├── LICENSE
+│   └── requirements.txt
+├── .github/workflows/       # CI/CD GitHub Actions
 └── README.md
 ```
 
@@ -90,7 +67,7 @@ L'API utilise **JWT (JSON Web Tokens)** pour l'authentification.
 ### Exemple de login
 
 ```bash
-curl -X POST http://localhost:8000/api/auth/token/ \
+curl -X POST https://koursa.duckdns.org/api/auth/token/ \
   -H "Content-Type: application/json" \
   -d '{"email": "user@example.com", "password": "motdepasse"}'
 ```
@@ -105,6 +82,7 @@ curl -X POST http://localhost:8000/api/auth/token/ \
     "email": "user@example.com",
     "first_name": "John",
     "last_name": "Doe",
+    "statut": "ACTIF",
     "roles": [{"id": 1, "nom_role": "Enseignant"}]
   }
 }
@@ -113,7 +91,7 @@ curl -X POST http://localhost:8000/api/auth/token/ \
 ### Utilisation du token
 
 ```bash
-curl -X GET http://localhost:8000/api/users/utilisateurs/ \
+curl -X GET https://koursa.duckdns.org/api/users/utilisateurs/ \
   -H "Authorization: Bearer <access_token>"
 ```
 
@@ -143,10 +121,14 @@ curl -X GET http://localhost:8000/api/users/utilisateurs/ \
   - `niveau_represente` : ForeignKey vers Niveau (pour les delegues)
   - `fcm_token` : Token Firebase pour notifications push
 
-#### Logique metier
-- **Enseignants** : Statut `ACTIF` automatiquement a l'inscription
-- **Autres roles** : Statut `EN_ATTENTE` (activation par admin requise)
-- **Delegues** : `niveau_represente` obligatoire
+#### Systeme d'inscription et approbation
+
+- **Tous les comptes** crees par inscription (web ou mobile) demarrent avec le statut `EN_ATTENTE`
+- **Comptes crees par un Super Admin** : statut `ACTIF` directement (pas besoin d'approbation)
+- **Approbation** : le Super Admin peut approuver tout role, le Chef de Departement ne peut approuver que les delegues et enseignants
+- **Delegues** : `niveau_represente` obligatoire a l'inscription
+- **Enseignants** : inscription via le formulaire web, approuves par le Chef de Departement ou le Super Admin
+- Un utilisateur peut avoir plusieurs roles (ex: Chef de Departement + Enseignant)
 
 #### Endpoints API
 
@@ -157,11 +139,12 @@ curl -X GET http://localhost:8000/api/users/utilisateurs/ \
 | GET | `/api/users/utilisateurs/{id}/` | Detail d'un utilisateur |
 | PUT/PATCH | `/api/users/utilisateurs/{id}/` | Modifier un utilisateur |
 | DELETE | `/api/users/utilisateurs/{id}/` | Supprimer un utilisateur |
+| GET | `/api/users/utilisateurs/me/` | Profil de l'utilisateur connecte |
+| POST | `/api/users/utilisateurs/{id}/approuver/` | Approuver un utilisateur en attente |
+| POST | `/api/users/utilisateurs/{id}/approuver-delegue/` | Alias pour compatibilite mobile |
+| POST | `/api/users/utilisateurs/confirm-password/` | Confirmer le mot de passe |
+| POST | `/api/users/utilisateurs/register-fcm-token/` | Enregistrer un token FCM |
 | GET | `/api/users/roles/` | Liste des roles |
-| POST | `/api/users/roles/` | Creer un role |
-| GET | `/api/users/roles/{id}/` | Detail d'un role |
-| PUT/PATCH | `/api/users/roles/{id}/` | Modifier un role |
-| DELETE | `/api/users/roles/{id}/` | Supprimer un role |
 
 ---
 
@@ -232,31 +215,6 @@ Faculte
 - `contenu_aborde` : Contenu detaille
 - `statut` : Statut de validation (`SOUMISE`, `VALIDEE`, `REFUSEE`)
 - `motif_refus` : Motif en cas de refus
-- `date_soumission` / `date_validation` : Timestamps
-
-#### Types de seances
-| Code | Description |
-|------|-------------|
-| `CM` | Cours Magistral |
-| `TD` | Travaux Diriges |
-| `TP` | Travaux Pratiques |
-
-#### Statuts des fiches
-| Statut | Description |
-|--------|-------------|
-| `SOUMISE` | En attente de validation |
-| `VALIDEE` | Validee par l'enseignant |
-| `REFUSEE` | Refusee (avec motif) |
-
-#### Permissions
-
-| Permission | Description |
-|------------|-------------|
-| `IsAuthenticated` | Utilisateur authentifie |
-| `IsDelegue` | Role Delegue requis |
-| `IsDelegueAuteur` | Auteur de la fiche |
-| `IsEnseignantConcerne` | Enseignant assigne a l'UE |
-| `IsFicheModifiable` | Fiche en statut SOUMISE |
 
 #### Endpoints API
 
@@ -268,45 +226,18 @@ Faculte
 | GET/PUT/PATCH/DELETE | `/api/teaching/fiches-suivi/{id}/` | CRUD fiche |
 | POST | `/api/teaching/fiches-suivi/{id}/valider/` | Valider une fiche |
 | POST | `/api/teaching/fiches-suivi/{id}/refuser/` | Refuser une fiche |
+| POST | `/api/teaching/fiches-suivi/{id}/resoumettre/` | Resoumettre une fiche refusee |
 | GET | `/api/teaching/fiches-suivi/en-attente/` | Fiches en attente |
-
-#### Filtres disponibles
-
-Les fiches de suivi peuvent etre filtrees par:
-- `statut` : SOUMISE, VALIDEE, REFUSEE
-- `date_cours` : Date du cours
-- `enseignant` : ID de l'enseignant
-- `delegue` : ID du delegue
-- `ue` : ID de l'unite d'enseignement
-
-Exemple: `/api/teaching/fiches-suivi/?statut=SOUMISE&ue=1`
 
 ---
 
 ### 4. Dashboard
 
-#### Endpoints API
-
 | Methode | Endpoint | Description |
 |---------|----------|-------------|
-| GET | `/api/dashboard/` | Statistiques du dashboard |
-
----
-
-## Interface d'administration
-
-Accessible via `/admin/`
-
-### Fonctionnalites admin implementees
-
-- **Utilisateurs** : Gestion complete avec filtres par statut et role
-- **Roles** : CRUD simple
-- **Facultes** : Recherche par nom
-- **Departements** : Filtrage par faculte, autocompletion
-- **Filieres** : Filtrage par departement/faculte
-- **Niveaux** : Filtrage par filiere/departement
-- **Unites d'enseignement** : Gestion des enseignants et niveaux
-- **Fiches de suivi** : Filtrage par statut, date, enseignant
+| GET | `/api/dashboard/` | Page d'accueil dashboard |
+| GET | `/api/dashboard/stats/` | Statistiques du departement |
+| GET | `/api/dashboard/export-heures/` | Export des heures (Excel) |
 
 ---
 
@@ -319,12 +250,11 @@ Accessible via `/admin/`
 
 ---
 
-## Installation
+## Installation locale
 
 ### Prerequis
 - Python 3.10+
 - pip
-- virtualenv (recommande)
 
 ### Etapes
 
@@ -336,9 +266,9 @@ cd KOURSA_BACKEND/koursa
 
 2. **Creer un environnement virtuel**
 ```bash
-python -m venv .env
-source .env/bin/activate  # Linux/Mac
-.env\Scripts\activate     # Windows
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+venv\Scripts\activate     # Windows
 ```
 
 3. **Installer les dependances**
@@ -348,12 +278,9 @@ pip install -r requirements.txt
 
 4. **Configurer les variables d'environnement**
 ```bash
-# Creer un fichier .env dans le dossier koursa/koursa/
-# Emplacement: KOURSA_BACKEND/koursa/koursa/.env
-
-SECRET_KEY=votre-cle-secrete-generee
+# Creer un fichier .env dans koursa/koursa/.env
+SECRET_KEY=votre-cle-secrete
 DEBUG=True
-# DATABASE_URL=sqlite:///db.sqlite3  # Optionnel, SQLite par defaut
 ```
 
 5. **Appliquer les migrations**
@@ -375,52 +302,6 @@ Le serveur sera accessible sur http://127.0.0.1:8000/
 
 ---
 
-## Configuration CORS
-
-Le backend est configure pour accepter les requetes cross-origin. En mode developpement (`DEBUG=True`), toutes les origines sont autorisees.
-
-En production, configurez `CORS_ALLOWED_ORIGINS` dans settings.py.
-
----
-
-## Deploiement (Render)
-
-Le projet est configure pour le deploiement sur Render avec :
-- Script de build : `build.sh`
-- Serveur : Gunicorn
-- Fichiers statiques : WhiteNoise
-- Base de donnees : PostgreSQL (via `DATABASE_URL`)
-
-### Variables d'environnement requises
-```
-SECRET_KEY=<cle-secrete-production>
-DEBUG=False
-DATABASE_URL=<url-postgresql>
-RENDER_EXTERNAL_HOSTNAME=<hostname-render>
-```
-
----
-
-## Dependances principales
-
-```
-Django==6.0
-djangorestframework==3.16.1
-djangorestframework-simplejwt==5.5.1
-django-filter==25.2
-django-cors-headers==4.3.1
-drf-yasg==1.21.11
-dj-database-url==3.0.1
-psycopg2-binary==2.9.11
-gunicorn==23.0.0
-whitenoise==6.11.0
-python-dotenv==1.2.1
-```
-
----
-
 ## Licence
 
 Apache License 2.0 - Copyright (c) 2025 M1 INF 4027
-
-Voir le fichier [LICENSE](LICENSE) pour plus de details.
