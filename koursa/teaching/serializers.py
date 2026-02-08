@@ -41,13 +41,18 @@ class UniteEnseignementSerializer(serializers.ModelSerializer):
 class FicheSuiviSerializer(serializers.ModelSerializer):
     nom_ue = serializers.CharField(source='ue.libelle_ue', read_only=True)
     code_ue = serializers.CharField(source='ue.code_ue', read_only=True)
+    semestre = serializers.IntegerField(source='ue.semestre', read_only=True)
     nom_delegue = serializers.SerializerMethodField()
     nom_enseignant = serializers.SerializerMethodField()
+    classe = serializers.SerializerMethodField()
+    niveaux_details = serializers.SerializerMethodField()
 
     class Meta:
         model = FicheSuivi
         fields = [
-            'id', 'ue', 'code_ue', 'nom_ue', 'delegue', 'nom_delegue', 'enseignant', 'nom_enseignant',
+            'id', 'ue', 'code_ue', 'nom_ue', 'semestre',
+            'classe', 'niveaux_details',
+            'delegue', 'nom_delegue', 'enseignant', 'nom_enseignant',
             'date_cours', 'heure_debut', 'heure_fin', 'duree', 'salle', 'type_seance',
             'titre_chapitre', 'contenu_aborde', 'statut', 'motif_refus',
             'date_soumission', 'date_validation'
@@ -59,6 +64,21 @@ class FicheSuiviSerializer(serializers.ModelSerializer):
 
     def get_nom_enseignant(self, obj):
         return f"{obj.enseignant.first_name} {obj.enseignant.last_name}" if obj.enseignant else None
+
+    def get_niveaux_details(self, obj):
+        if obj.ue:
+            return [
+                {'nom_niveau': n.nom_niveau, 'filiere_nom': n.filiere.nom_filiere}
+                for n in obj.ue.niveaux.select_related('filiere').all()
+            ]
+        return []
+
+    def get_classe(self, obj):
+        if obj.ue:
+            niveaux = obj.ue.niveaux.select_related('filiere').all()
+            labels = [f"{n.filiere.nom_filiere} {n.nom_niveau}" for n in niveaux]
+            return ', '.join(labels) if labels else None
+        return None
 
     def validate(self, attrs):
         """Validation personnalisée des données de la fiche de suivi"""

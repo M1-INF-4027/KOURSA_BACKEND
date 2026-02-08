@@ -38,7 +38,7 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
 
 
 class FicheSuiviViewSet(viewsets.ModelViewSet):
-    queryset = FicheSuivi.objects.select_related('ue', 'delegue', 'enseignant').all()
+    queryset = FicheSuivi.objects.select_related('ue', 'delegue', 'enseignant').prefetch_related('ue__niveaux__filiere').all()
     serializer_class = FicheSuiviSerializer
 
     filterset_fields = ['statut', 'date_cours', 'enseignant', 'delegue', 'ue']
@@ -73,7 +73,7 @@ class FicheSuiviViewSet(viewsets.ModelViewSet):
             return self.queryset
 
         if user.roles.filter(nom_role=Role.CHEF_DEPARTEMENT).exists() and user.departement_gere:
-            return self.queryset.filter(ue__niveaux__filiere__departement=user.departement_gere)
+            return self.queryset.filter(ue__niveaux__filiere__departement=user.departement_gere).distinct()
 
 
         return self.queryset.filter(Q(delegue=user) | Q(enseignant=user))
