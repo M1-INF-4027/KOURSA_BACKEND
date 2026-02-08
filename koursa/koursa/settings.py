@@ -231,7 +231,6 @@ JAZZMIN_SETTINGS = {
         "users": "fas fa-user-shield",
         "users.Utilisateur": "fas fa-user-graduate",
         "users.Role": "fas fa-user-tag",
-        "users.EnseignantWhitelist": "fas fa-clipboard-list",
         "academic": "fas fa-university",
         "academic.Faculte": "fas fa-building-columns",
         "academic.Departement": "fas fa-sitemap",

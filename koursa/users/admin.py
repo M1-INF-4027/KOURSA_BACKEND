@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import Utilisateur, Role, EnseignantWhitelist
+from .models import Utilisateur, Role
 from .forms import UtilisateurCreationForm, UtilisateurChangeForm
 
 @admin.register(Role)
@@ -41,7 +41,3 @@ class UtilisateurAdmin(UserAdmin):
         }),
     )
 
-@admin.register(EnseignantWhitelist)
-class EnseignantWhitelistAdmin(admin.ModelAdmin):
-    list_display = ('email', 'date_ajout')
-    search_fields = ('email',)

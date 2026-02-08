@@ -58,15 +58,8 @@ class UtilisateurSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         roles_data = validated_data.pop('roles', [])
 
-        # Determiner le statut initial selon le role
-        statut_final = StatutCompte.EN_ATTENTE
-
-        is_enseignant = any(role.nom_role == Role.ENSEIGNANT for role in roles_data)
-
-        if is_enseignant:
-            statut_final = StatutCompte.ACTIF
-
-        validated_data['statut'] = statut_final
+        # Tous les comptes créés par inscription démarrent EN_ATTENTE
+        validated_data['statut'] = StatutCompte.EN_ATTENTE
 
         user = Utilisateur.objects.create_user(**validated_data)
 

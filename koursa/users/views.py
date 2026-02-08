@@ -1,11 +1,10 @@
-from rest_framework import viewsets
-from .models import Utilisateur, Role, StatutCompte, EnseignantWhitelist
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.tokens import AccessToken
 from rest_framework_simplejwt.views import TokenObtainPairView
+from .models import Utilisateur, Role, StatutCompte
 from .permissions import IsHoD, IsSuperAdmin, IsAdminOrIsSelf
 from datetime import timedelta
 from .serializers import UtilisateurSerializer, RoleSerializer, PasswordConfirmationSerializer, MyTokenObtainPairSerializer
@@ -71,56 +70,56 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
             'validation_token': str(validation_token)
         }, status=status.HTTP_200_OK)
     
-    @action(detail=True, methods=['post'], permission_classes=[IsHoD], url_path='approuver-delegue')
-    def approuver_delegue(self, request, pk=None):
-        """Approuver un délégué en attente de validation"""
-        hod = request.user
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated], url_path='approuver')
+    def approuver(self, request, pk=None):
+        """Approuver un utilisateur en attente (délégué ou enseignant)"""
+        approbateur = request.user
 
-        try:
-            delegue_a_approuver = self.get_object()
-        except Utilisateur.DoesNotExist:
-            return Response({"detail": "Utilisateur non trouvé."}, status=status.HTTP_404_NOT_FOUND)
+        # Seuls le Super Admin et le Chef de Département peuvent approuver
+        is_super_admin = approbateur.roles.filter(nom_role=Role.SUPER_ADMIN).exists() or approbateur.is_superuser
+        is_hod = approbateur.roles.filter(nom_role=Role.CHEF_DEPARTEMENT).exists()
 
-        # Vérifier que c'est un délégué en attente
-        if not delegue_a_approuver.roles.filter(nom_role=Role.DELEGUE).exists() or delegue_a_approuver.statut != StatutCompte.EN_ATTENTE:
-            return Response({"detail": "Cet utilisateur n'est pas un délégué en attente de validation."}, status=status.HTTP_400_BAD_REQUEST)
+        if not is_super_admin and not is_hod:
+            return Response({"detail": "Vous n'avez pas la permission d'approuver des utilisateurs."}, status=status.HTTP_403_FORBIDDEN)
 
-        # Vérifier que le délégué a un niveau représenté
-        if not delegue_a_approuver.niveau_represente:
-            return Response({"detail": "Ce délégué n'a pas de niveau représenté assigné."}, status=status.HTTP_400_BAD_REQUEST)
+        utilisateur = self.get_object()
 
-        # Vérifier que le chef de département gère un département
-        if not hasattr(hod, 'departement_gere') or not hod.departement_gere:
-            return Response({"detail": "Vous n'êtes assigné à aucun département."}, status=status.HTTP_403_FORBIDDEN)
+        # Vérifier que l'utilisateur est en attente
+        if utilisateur.statut != StatutCompte.EN_ATTENTE:
+            return Response({"detail": "Cet utilisateur n'est pas en attente de validation."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Vérifier que le délégué appartient au département du chef
-        if delegue_a_approuver.niveau_represente.filiere.departement != hod.departement_gere:
-            return Response({"detail": "Vous n'avez pas la permission d'approuver un délégué de ce département."}, status=status.HTTP_403_FORBIDDEN)
+        is_delegue = utilisateur.roles.filter(nom_role=Role.DELEGUE).exists()
+        is_enseignant = utilisateur.roles.filter(nom_role=Role.ENSEIGNANT).exists()
 
-        delegue_a_approuver.statut = StatutCompte.ACTIF
-        delegue_a_approuver.save()
+        if not is_delegue and not is_enseignant:
+            return Response({"detail": "Seuls les délégués et enseignants peuvent être approuvés."}, status=status.HTTP_400_BAD_REQUEST)
 
-        serializer = self.get_serializer(delegue_a_approuver)
+        # Vérifications spécifiques au Chef de Département
+        if is_hod and not is_super_admin:
+            if not hasattr(approbateur, 'departement_gere') or not approbateur.departement_gere:
+                return Response({"detail": "Vous n'êtes assigné à aucun département."}, status=status.HTTP_403_FORBIDDEN)
+
+            # Pour un délégué, vérifier qu'il appartient au département du chef
+            if is_delegue:
+                if not utilisateur.niveau_represente:
+                    return Response({"detail": "Ce délégué n'a pas de niveau représenté assigné."}, status=status.HTTP_400_BAD_REQUEST)
+                if utilisateur.niveau_represente.filiere.departement != approbateur.departement_gere:
+                    return Response({"detail": "Cet utilisateur n'appartient pas à votre département."}, status=status.HTTP_403_FORBIDDEN)
+
+        utilisateur.statut = StatutCompte.ACTIF
+        utilisateur.save()
+
+        serializer = self.get_serializer(utilisateur)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+    # Garder l'ancien endpoint pour compatibilité mobile
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated], url_path='approuver-delegue')
+    def approuver_delegue(self, request, pk=None):
+        return self.approuver(request, pk)
     
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
-        email = serializer.validated_data.get('email')
-        roles_ids = [role.id for role in serializer.validated_data.get('roles', [])]
-        
-        try:
-            role_enseignant_id = Role.objects.get(nom_role=Role.ENSEIGNANT).id
-        except Role.DoesNotExist:
-            return Response({"detail": "Le rôle 'Enseignant' n'est pas configuré."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            
-        if role_enseignant_id in roles_ids:
-            if not EnseignantWhitelist.objects.filter(email__iexact=email).exists():
-                return Response(
-                    {"detail": f"L'email '{email}' n'est pas autorisé à s'inscrire en tant qu'enseignant."},
-                    status=status.HTTP_403_FORBIDDEN
-                )
 
         self.perform_create(serializer)
         headers = self.get_success_headers(serializer.data)
