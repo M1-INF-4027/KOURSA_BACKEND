@@ -2,6 +2,22 @@
 
 Backend API REST pour la plateforme **Koursa** - Systeme de gestion academique et de suivi pedagogique.
 
+## Fonctionnalites principales
+
+- Authentification JWT (access + refresh tokens) avec email comme identifiant
+- Gestion des utilisateurs avec systeme d'inscription et approbation multi-niveaux
+- Structure academique hierarchique : Faculte → Departement → Filiere → Niveau
+- Gestion des Unites d'Enseignement (UE) avec affectation enseignants et niveaux
+- Fiches de suivi pedagogique avec workflow de validation (SOUMISE → VALIDEE / REFUSEE)
+- Dashboard statistique avec filtrage par filiere, niveau et semestre
+- Export Excel (bilan global, par UE, par enseignant) avec openpyxl
+- Notifications push via Firebase Cloud Messaging (FCM)
+- Documentation API interactive (Swagger / ReDoc)
+- Interface d'administration personnalisee (Jazzmin)
+- Support multi-roles (un utilisateur peut avoir plusieurs roles)
+
+---
+
 ## Deploiement Production
 
 - **URL API:** https://koursa.duckdns.org/api/
@@ -24,11 +40,16 @@ Backend API REST pour la plateforme **Koursa** - Systeme de gestion academique e
 | Django Filter | 25.2 | Filtrage des querysets |
 | Django CORS Headers | 4.3.1 | Gestion CORS |
 | Simple JWT | 5.5.1 | Authentification JWT |
+| Firebase Admin | 7.1.0 | Notifications push (FCM) |
 | PostgreSQL | - | Base de donnees (production) |
 | SQLite | - | Base de donnees (developpement) |
 | drf-yasg | 1.21.11 | Documentation Swagger/OpenAPI |
 | WhiteNoise | 6.11.0 | Gestion des fichiers statiques |
+| openpyxl | 3.1.5 | Generation de fichiers Excel |
+| Jazzmin | 3.0.1 | Theme d'administration Django |
 | Gunicorn | 23.0.0 | Serveur WSGI (production) |
+| dj-database-url | 3.0.1 | Configuration base de donnees par URL |
+| python-dotenv | 1.2.1 | Variables d'environnement (.env) |
 
 ## Structure du projet
 
@@ -53,9 +74,46 @@ KOURSA_BACKEND/
 
 ---
 
+## Variables d'environnement
+
+Creer un fichier `.env` dans `koursa/koursa/.env` :
+
+| Variable | Description | Defaut |
+|----------|-------------|--------|
+| `SECRET_KEY` | Cle secrete Django | `django-insecure-...` (dev uniquement) |
+| `DEBUG` | Mode debug (`True` / `False`) | `True` |
+| `ALLOWED_HOSTS` | Hotes autorises (separes par virgule) | `*` en debug |
+| `DATABASE_URL` | URL de connexion PostgreSQL | SQLite (`db.sqlite3`) |
+| `RENDER_EXTERNAL_HOSTNAME` | Hostname externe (deploiement Render) | - |
+
+Exemple `.env` pour le developpement :
+```env
+SECRET_KEY=votre-cle-secrete-de-dev
+DEBUG=True
+```
+
+Exemple `.env` pour la production :
+```env
+SECRET_KEY=une-cle-secrete-longue-et-aleatoire
+DEBUG=False
+ALLOWED_HOSTS=koursa.duckdns.org,84.247.183.206
+DATABASE_URL=postgres://koursa_user:motdepasse@localhost:5432/koursa_db
+```
+
+---
+
 ## Authentification
 
 L'API utilise **JWT (JSON Web Tokens)** pour l'authentification.
+
+### Configuration JWT
+
+| Parametre | Valeur |
+|-----------|--------|
+| Duree du token d'acces | 60 minutes |
+| Duree du token de rafraichissement | 1 jour |
+| Algorithme | HS256 |
+| Type d'en-tete | `Bearer` |
 
 ### Endpoints d'authentification
 
@@ -216,6 +274,11 @@ Faculte
 - `statut` : Statut de validation (`SOUMISE`, `VALIDEE`, `REFUSEE`)
 - `motif_refus` : Motif en cas de refus
 
+L'API retourne aussi les champs calcules suivants :
+- `classe` : Label lisible de la classe (ex: "Informatique M1")
+- `semestre` : Numero du semestre de l'UE
+- `niveaux_details` : Liste `[{nom_niveau, filiere_nom}]`
+
 #### Endpoints API
 
 | Methode | Endpoint | Description |
@@ -233,11 +296,45 @@ Faculte
 
 ### 4. Dashboard
 
+#### Endpoints API
+
 | Methode | Endpoint | Description |
 |---------|----------|-------------|
 | GET | `/api/dashboard/` | Page d'accueil dashboard |
-| GET | `/api/dashboard/stats/` | Statistiques du departement |
-| GET | `/api/dashboard/export-heures/` | Export des heures (Excel) |
+| GET | `/api/dashboard/stats/` | Statistiques du departement (heures, retards, UEs) |
+| GET | `/api/dashboard/recapitulatif/` | Recapitulatif JSON (heures par UE + par enseignant) |
+| GET | `/api/dashboard/export-bilan/` | Export bilan global (Excel, format officiel) |
+| GET | `/api/dashboard/export-par-ue/` | Export par UE (un onglet par UE + recapitulatif) |
+| GET | `/api/dashboard/export-par-enseignant/` | Export par enseignant (un onglet par enseignant) |
+| GET | `/api/dashboard/export-heures/` | Export heures par mois (legacy) |
+
+#### Filtres disponibles (query params)
+
+Tous les endpoints dashboard (sauf export-heures) supportent :
+
+| Parametre | Type | Description |
+|-----------|------|-------------|
+| `date_debut` | YYYY-MM-DD | Date de debut de la periode |
+| `date_fin` | YYYY-MM-DD | Date de fin de la periode |
+| `filiere` | int | ID de la filiere |
+| `niveau` | int | ID du niveau (ex: L1, M1) |
+| `semestre` | int | Numero du semestre (1 ou 2) |
+
+Exemple : `/api/dashboard/export-bilan/?filiere=1&niveau=3&semestre=1`
+
+Le fichier Excel genere inclut la filiere/niveau/semestre dans le nom (ex: `BILAN_DES_COURS_Informatique_M1_S1.xlsx`).
+
+Les endpoints `stats` et `recapitulatif` retournent aussi la liste des filieres et niveaux disponibles pour le departement du chef.
+
+---
+
+## Notifications Push (Firebase)
+
+Le systeme utilise **Firebase Cloud Messaging (FCM)** pour envoyer des notifications push aux utilisateurs de l'application mobile.
+
+- Les utilisateurs enregistrent leur token FCM via `/api/users/utilisateurs/register-fcm-token/`
+- Le champ `fcm_token` est stocke sur le modele `Utilisateur`
+- Le SDK `firebase_admin` (v7.1.0) est utilise cote serveur pour envoyer les notifications
 
 ---
 
@@ -301,6 +398,34 @@ python manage.py runserver
 Le serveur sera accessible sur http://127.0.0.1:8000/
 
 ---
+
+## Scripts utiles
+
+```bash
+# Lancer le serveur de developpement
+python manage.py runserver
+
+# Creer les migrations apres modification des modeles
+python manage.py makemigrations
+
+# Appliquer les migrations
+python manage.py migrate
+
+# Creer un superutilisateur
+python manage.py createsuperuser
+
+# Collecter les fichiers statiques (production)
+python manage.py collectstatic --noinput
+
+# Lancer le serveur de production (Gunicorn)
+gunicorn koursa.wsgi:application --bind 0.0.0.0:8000
+```
+
+---
+
+## Equipe
+
+Projet realise par **M1 INF 4027** - Master 1 Informatique.
 
 ## Licence
 
