@@ -33,6 +33,7 @@ jobs:
           cd $TEMP_DIR/koursa
           for item in $(ls -A); do
             if [ "$item" != "venv" ] && [ "$item" != ".env" ] && [ "$item" != "staticfiles" ] && [ "$item" != "db.sqlite3" ]; then
+              rm -rf "$DEST/$item"
               cp -rf "$item" "$DEST/$item"
               echo "  Copie: $item"
             fi
