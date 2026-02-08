@@ -91,7 +91,8 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         is_delegue = utilisateur.roles.filter(nom_role=Role.DELEGUE).exists()
         is_enseignant = utilisateur.roles.filter(nom_role=Role.ENSEIGNANT).exists()
 
-        if not is_delegue and not is_enseignant:
+        # Le Chef de Département ne peut approuver que les délégués et enseignants
+        if is_hod and not is_super_admin and not is_delegue and not is_enseignant:
             return Response({"detail": "Seuls les délégués et enseignants peuvent être approuvés."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Vérifications spécifiques au Chef de Département
@@ -122,8 +123,19 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
 
         self.perform_create(serializer)
+
+        # Si un admin crée le compte, l'activer directement
+        if request.user.is_authenticated:
+            is_admin = request.user.roles.filter(nom_role=Role.SUPER_ADMIN).exists() or request.user.is_superuser
+            if is_admin:
+                user = serializer.instance
+                user.statut = StatutCompte.ACTIF
+                user.save()
+
         headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        # Re-serialize pour inclure le statut mis à jour
+        data = self.get_serializer(serializer.instance).data
+        return Response(data, status=status.HTTP_201_CREATED, headers=headers)
     
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated], url_path='me')
     def me(self, request):
