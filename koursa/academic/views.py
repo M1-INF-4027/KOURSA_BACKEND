@@ -1,6 +1,7 @@
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from users.permissions import IsSuperAdmin
+from users.models import Role
 from .models import Faculte, Departement, Filiere, Niveau, AnneeAcademique, Semestre, HistoriqueChefDepartement
 from .serializers import (
     FaculteSerializer, DepartementSerializer, FiliereSerializer, NiveauSerializer,
@@ -26,9 +27,36 @@ class DepartementViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
             permission_classes = [IsAuthenticated]
-        else: 
+        else:
             permission_classes = [IsSuperAdmin]
         return [permission() for permission in permission_classes]
+
+    def _sync_chef_role(self, old_chef, new_chef):
+        """Ajoute/retire le role Chef de Departement automatiquement."""
+        chef_role = Role.objects.filter(nom_role=Role.CHEF_DEPARTEMENT).first()
+        if not chef_role:
+            return
+
+        # Retirer le role de l'ancien chef s'il ne gere plus aucun departement
+        if old_chef and old_chef != new_chef:
+            still_chef = Departement.objects.filter(chef_departement=old_chef).exists()
+            if not still_chef:
+                old_chef.roles.remove(chef_role)
+
+        # Ajouter le role au nouveau chef
+        if new_chef and new_chef != old_chef:
+            new_chef.roles.add(chef_role)
+            new_chef.statut = 'ACTIF'
+            new_chef.save(update_fields=['statut'])
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        self._sync_chef_role(None, instance.chef_departement)
+
+    def perform_update(self, serializer):
+        old_chef = self.get_object().chef_departement
+        instance = serializer.save()
+        self._sync_chef_role(old_chef, instance.chef_departement)
 
 class FiliereViewSet(viewsets.ModelViewSet):
     queryset = Filiere.objects.select_related('departement').all()
