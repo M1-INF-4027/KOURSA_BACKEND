@@ -3,6 +3,7 @@ import os
 import dj_database_url
 from dotenv import load_dotenv
 from datetime import timedelta
+from django.core.exceptions import ImproperlyConfigured
 
 load_dotenv()
 
@@ -12,9 +13,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 ENV_FILE = Path(__file__).resolve().parent / '.env'
 load_dotenv(ENV_FILE)
 
-SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-valeur-par-defaut-pour-le-dev')
+SECRET_KEY = os.environ.get('SECRET_KEY')
+if not SECRET_KEY:
+    raise ImproperlyConfigured(
+        "La variable d'environnement SECRET_KEY est obligatoire. "
+        "Ajoutez-la dans votre fichier .env ou vos variables d'environnement."
+    )
 
-DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
+DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 
 ALLOWED_HOSTS = []
 RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
@@ -29,7 +35,7 @@ else:
 
 # En mode DEBUG, autoriser l'acces depuis le reseau local (appareils physiques)
 if DEBUG:
-    ALLOWED_HOSTS.extend(['0.0.0.0', '192.168.1.198', '*'])
+    ALLOWED_HOSTS.extend(['0.0.0.0', '192.168.1.198', '10.0.2.2'])
 
 INSTALLED_APPS = [
     'jazzmin',
@@ -77,16 +83,25 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
 ]
 
-# En developpement, autoriser toutes les origines
+# En developpement, autoriser les origines locales supplementaires
 if DEBUG:
-    CORS_ALLOW_ALL_ORIGINS = True
+    CORS_ALLOWED_ORIGINS.extend([
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+        "http://localhost:19006",
+        "http://10.0.2.2:8000",
+    ])
 
-# Configuration CSRF pour accès via IP
-CSRF_TRUSTED_ORIGINS = [
-    'http://84.247.183.206:8082',
-    'http://127.0.0.1:8082',
-    'http://localhost:8082',
-]
+# Configuration CSRF pour accès via IP (utiliser les variables d'environnement en production)
+CSRF_TRUSTED_ORIGINS = []
+CSRF_TRUSTED_ORIGINS_ENV = os.environ.get('CSRF_TRUSTED_ORIGINS', '')
+if CSRF_TRUSTED_ORIGINS_ENV:
+    CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in CSRF_TRUSTED_ORIGINS_ENV.split(',')]
+else:
+    CSRF_TRUSTED_ORIGINS = [
+        'http://127.0.0.1:8082',
+        'http://localhost:8082',
+    ]
 
 ROOT_URLCONF = 'koursa.urls'
 
@@ -127,7 +142,16 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_FILTER_BACKENDS': ['django_filters.rest_framework.DjangoFilterBackend'],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 10
+    'PAGE_SIZE': 10,
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '20/minute',
+        'user': '100/minute',
+        'login': '5/minute',
+    },
 }
 
 SIMPLE_JWT = {
@@ -182,6 +206,51 @@ else:
 AUTH_USER_MODEL = 'users.Utilisateur'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# ─────────────────────────────────────────────
+# LOGGING
+# ─────────────────────────────────────────────
+LOG_DIR = BASE_DIR / 'logs'
+LOG_DIR.mkdir(exist_ok=True)
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{asctime} {levelname} {name} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+        'file': {
+            'class': 'logging.FileHandler',
+            'filename': str(LOG_DIR / 'koursa.log'),
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'koursa': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'koursa.notifications': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'django.security': {
+            'handlers': ['console', 'file'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+    },
+}
 
 # Repertoire des fichiers statiques supplementaires
 STATICFILES_DIRS = [

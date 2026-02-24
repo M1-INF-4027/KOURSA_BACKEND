@@ -95,13 +95,18 @@ class FicheSuiviSerializer(serializers.ModelSerializer):
                     'heure_fin': "L'heure de fin doit être postérieure à l'heure de début."
                 })
 
-        # Vérifier que la date du cours n'est pas dans le futur lointain (max 7 jours)
+        # Vérifier que la date du cours est dans une plage raisonnable
         if date_cours:
             from datetime import timedelta
             max_date = date.today() + timedelta(days=7)
+            min_date = date.today() - timedelta(days=30)
             if date_cours > max_date:
                 raise serializers.ValidationError({
                     'date_cours': "La date du cours ne peut pas être plus de 7 jours dans le futur."
+                })
+            if date_cours < min_date:
+                raise serializers.ValidationError({
+                    'date_cours': "La date du cours ne peut pas être plus de 30 jours dans le passe."
                 })
 
         # Vérifier que l'enseignant est bien assigné à l'UE

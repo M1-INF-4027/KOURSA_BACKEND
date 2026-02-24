@@ -58,6 +58,24 @@ class UtilisateurSerializer(serializers.ModelSerializer):
                     "niveau_represente": "Ce champ est obligatoire pour un utilisateur ayant le rôle de Délégué."
                 })
 
+            # Empecher les non-admins d'assigner des roles privilegies
+            request = self.context.get('request')
+            if request and roles:
+                privileged_roles = [Role.SUPER_ADMIN, Role.CHEF_DEPARTEMENT]
+                has_privileged = any(role.nom_role in privileged_roles for role in roles)
+
+                if has_privileged:
+                    is_admin = (
+                        request.user.is_authenticated and (
+                            request.user.is_superuser or
+                            request.user.roles.filter(nom_role=Role.SUPER_ADMIN).exists()
+                        )
+                    )
+                    if not is_admin:
+                        raise serializers.ValidationError({
+                            "roles_ids": "Seul un Super Administrateur peut assigner les roles privilegies."
+                        })
+
         return attrs
 
     def create(self, validated_data):

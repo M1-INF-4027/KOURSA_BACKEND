@@ -63,14 +63,22 @@ class IsAdminOrIsSelf(BasePermission):
             return True
 
         if request.user.roles.filter(nom_role=Role.CHEF_DEPARTEMENT).exists():
-            hod = request.user
-            departement_du_hod = hod.departement_gere
-            
+            if not hasattr(request.user, 'departement_gere') or not request.user.departement_gere:
+                return False
+
+            departement_du_hod = request.user.departement_gere
+
             if obj.roles.filter(nom_role__in=[Role.SUPER_ADMIN, Role.CHEF_DEPARTEMENT]).exists():
                 return False
 
             if obj.roles.filter(nom_role=Role.ENSEIGNANT).exists():
-                return True 
+                # Verifier que l'enseignant enseigne dans le departement du chef
+                from teaching.models import UniteEnseignement
+                enseigne_dans_dept = UniteEnseignement.objects.filter(
+                    enseignants=obj,
+                    niveaux__filiere__departement=departement_du_hod
+                ).exists()
+                return enseigne_dans_dept
 
             if obj.roles.filter(nom_role=Role.DELEGUE).exists():
                 if obj.niveau_represente and obj.niveau_represente.filiere.departement == departement_du_hod:

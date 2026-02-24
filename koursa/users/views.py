@@ -2,6 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework_simplejwt.tokens import AccessToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .models import Utilisateur, Role, StatutCompte
@@ -180,5 +181,11 @@ class RoleViewSet(viewsets.ModelViewSet):
         return [permission() for permission in permission_classes]
     
 
+class LoginRateThrottle(AnonRateThrottle):
+    """Limite les tentatives de login a 5/minute"""
+    scope = 'login'
+
+
 class MyTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
+    throttle_classes = [LoginRateThrottle]
