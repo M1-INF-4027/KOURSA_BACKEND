@@ -51,7 +51,7 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
         # Super admin et chef voient toutes les UEs (du scope)
         if user.roles.filter(nom_role=Role.SUPER_ADMIN).exists() or user.is_superuser:
             return qs
-        if user.roles.filter(nom_role=Role.CHEF_DEPARTEMENT).exists() and hasattr(user, 'departement_gere'):
+        if user.roles.filter(nom_role=Role.CHEF_DEPARTEMENT).exists() and getattr(user, 'departement_gere', None):
             return qs.filter(niveaux__filiere__departement=user.departement_gere).distinct()
 
         if user.roles.filter(nom_role=Role.DELEGUE).exists():
