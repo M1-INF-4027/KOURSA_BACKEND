@@ -213,6 +213,10 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOG_DIR = BASE_DIR / 'logs'
 LOG_DIR.mkdir(exist_ok=True)
 
+# Verifier si on peut ecrire dans le dossier logs (evite crash si permissions incorrectes)
+_log_file_writable = os.access(str(LOG_DIR), os.W_OK)
+_log_handlers = ['console', 'file'] if _log_file_writable else ['console']
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -227,25 +231,25 @@ LOGGING = {
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
         },
-        'file': {
+        **({'file': {
             'class': 'logging.FileHandler',
             'filename': str(LOG_DIR / 'koursa.log'),
             'formatter': 'verbose',
-        },
+        }} if _log_file_writable else {}),
     },
     'loggers': {
         'koursa': {
-            'handlers': ['console', 'file'],
+            'handlers': _log_handlers,
             'level': 'INFO',
             'propagate': False,
         },
         'koursa.notifications': {
-            'handlers': ['console', 'file'],
+            'handlers': _log_handlers,
             'level': 'INFO',
             'propagate': False,
         },
         'django.security': {
-            'handlers': ['console', 'file'],
+            'handlers': _log_handlers,
             'level': 'WARNING',
             'propagate': False,
         },
