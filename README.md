@@ -25,8 +25,71 @@ Backend API REST pour la plateforme **Koursa** - Systeme de gestion academique e
 - **Documentation Swagger:** https://koursa.duckdns.org/swagger/
 - **Serveur:** 84.247.183.206 (softengine)
 - **SSL:** Let's Encrypt (renouvellement automatique via Certbot)
-- **Base de donnees:** PostgreSQL (koursa_db / koursa_user)
+- **Base de donnees:** PostgreSQL (koursa_db / koursa_user / mot de passe: koursa2026)
 - **CI/CD:** GitHub Actions (deploiement automatique sur push main)
+
+### Acces VPS
+
+| Info | Valeur |
+|------|--------|
+| Serveur | `84.247.183.206` |
+| Utilisateur SSH | `softengine` |
+| Mot de passe SSH | `o6ftAam6S` |
+| Chemin du projet | `/var/www/koursa-backend/KOURSA_BACKEND/koursa` |
+| Virtualenv | `/var/www/koursa-backend/KOURSA_BACKEND/koursa/venv` |
+| Fichier .env | `/var/www/koursa-backend/KOURSA_BACKEND/koursa/.env` |
+
+### Compte Super Administrateur
+
+| Info | Valeur |
+|------|--------|
+| Email | `tiomelajorel@gmail.com` |
+| Mot de passe | `koursa@1234` |
+| Role | Super Administrateur |
+
+### Reset complet de la base de donnees
+
+```bash
+# 1. Se connecter au serveur
+ssh softengine@84.247.183.206
+
+# 2. Arreter le service
+sudo systemctl stop koursa-backend
+
+# 3. Vider et recreer la BD
+sudo -u postgres psql -c "DROP DATABASE koursa_db;"
+sudo -u postgres psql -c "CREATE DATABASE koursa_db OWNER koursa_user;"
+
+# 4. Relancer les migrations (cree les roles + super admin automatiquement)
+cd /var/www/koursa-backend/KOURSA_BACKEND/koursa
+source venv/bin/activate
+python manage.py migrate
+
+# 5. Redemarrer le service
+sudo systemctl start koursa-backend
+```
+
+### Commandes utiles sur le serveur
+
+```bash
+# Voir les logs
+sudo journalctl -u koursa-backend -f
+
+# Redemarrer le service
+sudo systemctl restart koursa-backend
+
+# Statut du service
+sudo systemctl status koursa-backend
+
+# Deploiement manuel
+cd /var/www/koursa-backend/KOURSA_BACKEND
+git pull origin main
+cd koursa && source venv/bin/activate
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py collectstatic --noinput
+sudo systemctl restart koursa-backend
+```
 
 ---
 
@@ -84,7 +147,9 @@ Creer un fichier `.env` dans `koursa/koursa/.env` :
 | `DEBUG` | Mode debug (`True` / `False`) | `True` |
 | `ALLOWED_HOSTS` | Hotes autorises (separes par virgule) | `*` en debug |
 | `DATABASE_URL` | URL de connexion PostgreSQL | SQLite (`db.sqlite3`) |
-| `RENDER_EXTERNAL_HOSTNAME` | Hostname externe (deploiement Render) | - |
+| `CSRF_TRUSTED_ORIGINS` | Origines CSRF de confiance | - |
+| `SUPERUSER_EMAIL` | Email du super admin (cree au migrate) | - |
+| `SUPERUSER_PASSWORD` | Mot de passe du super admin | - |
 
 Exemple `.env` pour le developpement :
 ```env
@@ -378,16 +443,13 @@ pip install -r requirements.txt
 # Creer un fichier .env dans koursa/koursa/.env
 SECRET_KEY=votre-cle-secrete
 DEBUG=True
+SUPERUSER_EMAIL=tiomelajorel@gmail.com
+SUPERUSER_PASSWORD=koursa@1234
 ```
 
-5. **Appliquer les migrations**
+5. **Appliquer les migrations** (cree automatiquement les 4 roles + le super admin)
 ```bash
 python manage.py migrate
-```
-
-6. **Creer un superutilisateur**
-```bash
-python manage.py createsuperuser
 ```
 
 7. **Lancer le serveur**
