@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Faculte, Departement, Filiere, Niveau
+from .models import Faculte, Departement, Filiere, Niveau, AnneeAcademique, Semestre, HistoriqueChefDepartement
 
 @admin.register(Faculte)
 class FaculteAdmin(admin.ModelAdmin):
@@ -26,3 +26,29 @@ class NiveauAdmin(admin.ModelAdmin):
     list_filter = ('filiere__departement', 'filiere')
     search_fields = ('nom_niveau',)
     autocomplete_fields = ['filiere']
+
+
+class SemestreInline(admin.TabularInline):
+    model = Semestre
+    extra = 0
+    max_num = 2
+
+
+@admin.register(AnneeAcademique)
+class AnneeAcademiqueAdmin(admin.ModelAdmin):
+    list_display = ('libelle', 'est_active', 'est_configuree', 'date_creation')
+    list_filter = ('est_active', 'est_configuree')
+    search_fields = ('libelle',)
+    inlines = [SemestreInline]
+
+
+@admin.register(Semestre)
+class SemestreAdmin(admin.ModelAdmin):
+    list_display = ('__str__', 'date_debut', 'date_fin', 'est_actif')
+    list_filter = ('annee_academique', 'est_actif')
+
+
+@admin.register(HistoriqueChefDepartement)
+class HistoriqueChefAdmin(admin.ModelAdmin):
+    list_display = ('departement', 'utilisateur', 'annee_academique', 'date_debut', 'date_fin')
+    list_filter = ('annee_academique', 'departement')

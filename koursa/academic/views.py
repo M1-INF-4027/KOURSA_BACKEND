@@ -1,8 +1,11 @@
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from users.permissions import IsSuperAdmin
-from .models import Faculte, Departement, Filiere, Niveau
-from .serializers import FaculteSerializer, DepartementSerializer, FiliereSerializer, NiveauSerializer
+from .models import Faculte, Departement, Filiere, Niveau, AnneeAcademique, Semestre, HistoriqueChefDepartement
+from .serializers import (
+    FaculteSerializer, DepartementSerializer, FiliereSerializer, NiveauSerializer,
+    AnneeAcademiqueSerializer, SemestreSerializer, HistoriqueChefSerializer,
+)
 
 class FaculteViewSet(viewsets.ModelViewSet):
     queryset = Faculte.objects.all()
@@ -48,3 +51,29 @@ class NiveauViewSet(viewsets.ModelViewSet):
         else:
             permission_classes = [IsSuperAdmin]
         return [permission() for permission in permission_classes]
+
+
+class AnneeAcademiqueViewSet(viewsets.ModelViewSet):
+    queryset = AnneeAcademique.objects.prefetch_related('semestres').all()
+    serializer_class = AnneeAcademiqueSerializer
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [IsAuthenticated()]
+        return [IsSuperAdmin()]
+
+
+class SemestreViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Semestre.objects.select_related('annee_academique').all()
+    serializer_class = SemestreSerializer
+    permission_classes = [IsAuthenticated]
+    filterset_fields = ['annee_academique', 'est_actif']
+
+
+class HistoriqueChefViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = HistoriqueChefDepartement.objects.select_related(
+        'departement', 'utilisateur', 'annee_academique'
+    ).all()
+    serializer_class = HistoriqueChefSerializer
+    permission_classes = [IsAuthenticated]
+    filterset_fields = ['departement', 'annee_academique']

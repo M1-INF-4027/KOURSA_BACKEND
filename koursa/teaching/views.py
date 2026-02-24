@@ -19,7 +19,7 @@ from koursa.firebase_config import send_notification
 
 
 class UniteEnseignementViewSet(viewsets.ModelViewSet):
-    queryset = UniteEnseignement.objects.prefetch_related('enseignants', 'niveaux').all()
+    queryset = UniteEnseignement.objects.prefetch_related('enseignants', 'niveaux').select_related('semestre_obj__annee_academique').all()
     serializer_class = UniteEnseignementSerializer
     permission_classes = [IsAuthenticated]
 
@@ -28,11 +28,37 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return UniteEnseignement.objects.none()
 
+        qs = self.queryset
+
+        # Scoper par semestre/annee si parametre fourni
+        semestre_id = self.request.query_params.get('semestre_id')
+        annee_id = self.request.query_params.get('annee_academique')
+        if semestre_id:
+            qs = qs.filter(semestre_obj_id=semestre_id)
+        elif annee_id:
+            qs = qs.filter(semestre_obj__annee_academique_id=annee_id)
+        else:
+            # Pour enseignant/delegue : scoper par defaut a l'annee active
+            is_admin_or_chef = user.roles.filter(
+                nom_role__in=[Role.SUPER_ADMIN, Role.CHEF_DEPARTEMENT]
+            ).exists() or user.is_superuser
+            if not is_admin_or_chef:
+                from academic.models import AnneeAcademique
+                annee_active = AnneeAcademique.objects.filter(est_active=True).first()
+                if annee_active:
+                    qs = qs.filter(semestre_obj__annee_academique=annee_active)
+
+        # Super admin et chef voient toutes les UEs (du scope)
+        if user.roles.filter(nom_role=Role.SUPER_ADMIN).exists() or user.is_superuser:
+            return qs
+        if user.roles.filter(nom_role=Role.CHEF_DEPARTEMENT).exists() and hasattr(user, 'departement_gere'):
+            return qs.filter(niveaux__filiere__departement=user.departement_gere).distinct()
+
         if user.roles.filter(nom_role=Role.DELEGUE).exists():
-            return self.queryset.filter(niveaux=user.niveau_represente)
+            return qs.filter(niveaux=user.niveau_represente)
 
         if user.roles.filter(nom_role=Role.ENSEIGNANT).exists():
-            return self.queryset.filter(enseignants=user)
+            return qs.filter(enseignants=user)
 
         return UniteEnseignement.objects.none()
 
@@ -69,17 +95,39 @@ class FicheSuiviViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return FicheSuivi.objects.none()
 
+        qs = self.queryset
+
+        # Filtrage par semestre/annee
+        semestre_id = self.request.query_params.get('semestre_id')
+        annee_id = self.request.query_params.get('annee_academique')
+        if semestre_id:
+            qs = qs.filter(semestre_id=semestre_id)
+        elif annee_id:
+            qs = qs.filter(semestre__annee_academique_id=annee_id)
+        else:
+            # Pour enseignant/delegue : scoper par defaut a l'annee active
+            is_admin_or_chef = user.roles.filter(
+                nom_role__in=[Role.SUPER_ADMIN, Role.CHEF_DEPARTEMENT]
+            ).exists() or user.is_superuser
+            if not is_admin_or_chef:
+                from academic.models import AnneeAcademique
+                annee_active = AnneeAcademique.objects.filter(est_active=True).first()
+                if annee_active:
+                    qs = qs.filter(semestre__annee_academique=annee_active)
+
+        # Filtrage par role
         if user.roles.filter(nom_role=Role.SUPER_ADMIN).exists():
-            return self.queryset
+            return qs
 
         if user.roles.filter(nom_role=Role.CHEF_DEPARTEMENT).exists() and user.departement_gere:
-            return self.queryset.filter(ue__niveaux__filiere__departement=user.departement_gere).distinct()
+            return qs.filter(ue__niveaux__filiere__departement=user.departement_gere).distinct()
 
-
-        return self.queryset.filter(Q(delegue=user) | Q(enseignant=user))
+        return qs.filter(Q(delegue=user) | Q(enseignant=user))
 
     def perform_create(self, serializer):
-        serializer.save(delegue=self.request.user)
+        from academic.models import Semestre
+        semestre_actif = Semestre.objects.filter(est_actif=True).first()
+        serializer.save(delegue=self.request.user, semestre=semestre_actif)
 
     @action(detail=True, methods=['post'], url_path='valider')
     def valider(self, request, pk=None):

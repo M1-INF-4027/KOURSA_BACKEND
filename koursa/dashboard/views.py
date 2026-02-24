@@ -50,11 +50,13 @@ def get_departement(user):
         return None
 
 
-def get_fiches_queryset(departement, date_debut=None, date_fin=None, filiere_id=None, niveau_id=None, semestre=None):
+def get_fiches_queryset(departement, date_debut=None, date_fin=None, filiere_id=None, niveau_id=None, semestre=None, annee_academique_id=None):
     qs = FicheSuivi.objects.filter(
         ue__niveaux__filiere__departement=departement,
         statut=StatutFiche.VALIDEE,
     ).select_related('ue', 'enseignant').distinct()
+    if annee_academique_id:
+        qs = qs.filter(semestre__annee_academique_id=annee_academique_id)
     if filiere_id:
         qs = qs.filter(ue__niveaux__filiere_id=filiere_id)
     if niveau_id:

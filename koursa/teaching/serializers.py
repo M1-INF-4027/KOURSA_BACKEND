@@ -28,14 +28,24 @@ class NiveauSimpleSerializer(serializers.Serializer):
 class UniteEnseignementSerializer(serializers.ModelSerializer):
     enseignants_details = EnseignantSimpleSerializer(source='enseignants', many=True, read_only=True)
     niveaux_details = NiveauSimpleSerializer(source='niveaux', many=True, read_only=True)
+    semestre_info = serializers.SerializerMethodField()
 
     class Meta:
         model = UniteEnseignement
         fields = [
-            'id', 'code_ue', 'libelle_ue', 'semestre',
-            'enseignants', 'enseignants_details',
+            'id', 'code_ue', 'libelle_ue', 'semestre', 'semestre_obj',
+            'semestre_info', 'enseignants', 'enseignants_details',
             'niveaux', 'niveaux_details'
         ]
+
+    def get_semestre_info(self, obj):
+        if obj.semestre_obj:
+            return {
+                'id': obj.semestre_obj.id,
+                'numero': obj.semestre_obj.numero,
+                'annee': obj.semestre_obj.annee_academique.libelle,
+            }
+        return None
 
 
 class FicheSuiviSerializer(serializers.ModelSerializer):
@@ -47,17 +57,28 @@ class FicheSuiviSerializer(serializers.ModelSerializer):
     classe = serializers.SerializerMethodField()
     niveaux_details = serializers.SerializerMethodField()
 
+    semestre_info = serializers.SerializerMethodField()
+
     class Meta:
         model = FicheSuivi
         fields = [
             'id', 'ue', 'code_ue', 'nom_ue', 'semestre',
-            'classe', 'niveaux_details',
+            'semestre_info', 'classe', 'niveaux_details',
             'delegue', 'nom_delegue', 'enseignant', 'nom_enseignant',
             'date_cours', 'heure_debut', 'heure_fin', 'duree', 'salle', 'type_seance',
             'titre_chapitre', 'contenu_aborde', 'statut', 'motif_refus',
             'date_soumission', 'date_validation'
         ]
-        read_only_fields = ['duree', 'statut', 'date_soumission', 'date_validation', 'delegue']
+        read_only_fields = ['duree', 'statut', 'date_soumission', 'date_validation', 'delegue', 'semestre']
+
+    def get_semestre_info(self, obj):
+        if obj.semestre:
+            return {
+                'id': obj.semestre.id,
+                'numero': obj.semestre.numero,
+                'annee': obj.semestre.annee_academique.libelle,
+            }
+        return None
 
     def get_nom_delegue(self, obj):
         return f"{obj.delegue.first_name} {obj.delegue.last_name}" if obj.delegue else None

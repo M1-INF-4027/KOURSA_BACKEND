@@ -17,6 +17,15 @@ class StatutFiche(models.TextChoices):
 class FicheSuivi(models.Model):
     ue = models.ForeignKey(UniteEnseignement, on_delete=models.PROTECT, related_name='fiches')
 
+    semestre = models.ForeignKey(
+        'academic.Semestre',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='fiches_suivi',
+        verbose_name="Semestre"
+    )
+
     delegue = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL, null=True,
