@@ -77,8 +77,16 @@ class ActivateAnneeView(APIView):
             annee = AnneeAcademique.objects.get(pk=pk)
         except AnneeAcademique.DoesNotExist:
             return Response({'detail': 'Annee non trouvee.'}, status=status.HTTP_404_NOT_FOUND)
-        annee.est_active = True
-        annee.save()
+
+        with transaction.atomic():
+            annee.est_active = True
+            annee.save()
+            # Activer le S1 de cette annee (desactive les autres semestres via Semestre.save())
+            s1 = Semestre.objects.filter(annee_academique=annee, numero=1).first()
+            if s1:
+                s1.est_actif = True
+                s1.save()
+
         return Response(AnneeAcademiqueSerializer(annee).data)
 
 

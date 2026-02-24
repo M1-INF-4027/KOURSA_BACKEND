@@ -28,6 +28,7 @@ class Semestre(models.Model):
 
     def save(self, *args, **kwargs):
         if self.est_actif:
+            # Un seul semestre actif dans tout le systeme
             Semestre.objects.filter(
                 est_actif=True
             ).exclude(pk=self.pk).update(est_actif=False)

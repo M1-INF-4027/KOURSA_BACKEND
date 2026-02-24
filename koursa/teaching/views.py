@@ -126,7 +126,12 @@ class FicheSuiviViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         from academic.models import Semestre
+        from rest_framework.exceptions import ValidationError
         semestre_actif = Semestre.objects.filter(est_actif=True).first()
+        if not semestre_actif:
+            raise ValidationError(
+                {"detail": "Aucun semestre actif. Veuillez contacter l'administrateur."}
+            )
         serializer.save(delegue=self.request.user, semestre=semestre_actif)
 
     @action(detail=True, methods=['post'], url_path='valider')
