@@ -60,7 +60,8 @@ INSTALLED_APPS = [
     'users',
     'academic',
     'teaching',
-    'dashboard'
+    'dashboard',
+    'notifications',
 ]
 
 MIDDLEWARE = [
@@ -83,6 +84,13 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
 ]
 
+# Ajouter les origines depuis la variable d'environnement (production)
+CORS_ALLOWED_ORIGINS_ENV = os.environ.get('CORS_ALLOWED_ORIGINS', '')
+if CORS_ALLOWED_ORIGINS_ENV:
+    CORS_ALLOWED_ORIGINS.extend([
+        origin.strip() for origin in CORS_ALLOWED_ORIGINS_ENV.split(',') if origin.strip()
+    ])
+
 # En developpement, autoriser les origines locales supplementaires
 if DEBUG:
     CORS_ALLOWED_ORIGINS.extend([
@@ -91,6 +99,8 @@ if DEBUG:
         "http://localhost:19006",
         "http://10.0.2.2:8000",
     ])
+
+CORS_ALLOW_CREDENTIALS = True
 
 # Configuration CSRF pour accès via IP (utiliser les variables d'environnement en production)
 CSRF_TRUSTED_ORIGINS = []

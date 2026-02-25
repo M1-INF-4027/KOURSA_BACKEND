@@ -36,6 +36,7 @@ urlpatterns = [
     path('api/academic/', include('academic.urls')),
     path('api/teaching/', include('teaching.urls')),
     path('api/users/', include('users.urls')),
+    path('api/notifications/', include('notifications.urls')),
 
     # Configuration endpoints
     path('api/configuration/status/', ConfigurationStatusView.as_view(), name='config-status'),

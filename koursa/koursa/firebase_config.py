@@ -19,17 +19,39 @@ def initialize_firebase():
 
 
 def send_notification(token, title, body):
-    
+
     if not firebase_admin._apps:
         print("Firebase n'est pas initialisé. Impossible d'envoyer la notification.")
         return False
-        
+
     try:
         message = messaging.Message(
             notification=messaging.Notification(
                 title=title,
                 body=body,
             ),
+            token=token,
+        )
+        response = messaging.send(message)
+        print('Notification envoyée avec succès :', response)
+        return True
+    except Exception as e:
+        print(f"Erreur lors de l'envoi de la notification : {e}")
+        return False
+
+
+def send_notification_with_data(token, title, body, data=None):
+    if not firebase_admin._apps:
+        print("Firebase n'est pas initialisé. Impossible d'envoyer la notification.")
+        return False
+
+    try:
+        message = messaging.Message(
+            notification=messaging.Notification(
+                title=title,
+                body=body,
+            ),
+            data=data or {},
             token=token,
         )
         response = messaging.send(message)

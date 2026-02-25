@@ -15,7 +15,8 @@ from .serializers import (
     ValidationTokenSerializer,
     ValidationFicheSerializer
 )
-from koursa.firebase_config import send_notification
+from notifications.services import create_and_send_notification
+from notifications.models import NotificationType
 
 
 class UniteEnseignementViewSet(viewsets.ModelViewSet):
@@ -39,6 +40,7 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
             qs = qs.filter(semestre_obj__annee_academique_id=annee_id)
         else:
             # Pour enseignant/delegue : scoper par defaut a l'annee active
+            # Inclure aussi les UEs sans semestre_obj (pas encore assignees)
             is_admin_or_chef = user.roles.filter(
                 nom_role__in=[Role.SUPER_ADMIN, Role.CHEF_DEPARTEMENT]
             ).exists() or user.is_superuser
@@ -46,7 +48,10 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
                 from academic.models import AnneeAcademique
                 annee_active = AnneeAcademique.objects.filter(est_active=True).first()
                 if annee_active:
-                    qs = qs.filter(semestre_obj__annee_academique=annee_active)
+                    qs = qs.filter(
+                        Q(semestre_obj__annee_academique=annee_active) |
+                        Q(semestre_obj__isnull=True)
+                    )
 
         # Super admin et chef voient toutes les UEs (du scope)
         if user.roles.filter(nom_role=Role.SUPER_ADMIN).exists() or user.is_superuser:
@@ -55,12 +60,67 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
             return qs.filter(niveaux__filiere__departement=user.departement_gere).distinct()
 
         if user.roles.filter(nom_role=Role.DELEGUE).exists():
-            return qs.filter(niveaux=user.niveau_represente)
+            if user.niveau_represente:
+                return qs.filter(niveaux=user.niveau_represente)
+            return UniteEnseignement.objects.none()
 
         if user.roles.filter(nom_role=Role.ENSEIGNANT).exists():
             return qs.filter(enseignants=user)
 
         return UniteEnseignement.objects.none()
+
+
+    @action(detail=False, methods=['get'], url_path='mes-delegues')
+    def mes_delegues(self, request):
+        """Retourne les delegues actifs des classes de l'enseignant connecte"""
+        user = request.user
+        if not user.roles.filter(nom_role=Role.ENSEIGNANT).exists():
+            return Response(
+                {"detail": "Acces reserve aux enseignants."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # UEs de cet enseignant
+        mes_ues = self.get_queryset().filter(enseignants=user)
+
+        # Niveaux distincts lies a ces UEs
+        from academic.models import Niveau
+        niveaux_ids = mes_ues.values_list('niveaux', flat=True).distinct()
+        niveaux = Niveau.objects.filter(id__in=niveaux_ids).select_related('filiere').distinct()
+
+        result = []
+        for niveau in niveaux:
+            # UEs de l'enseignant dans ce niveau
+            ues_du_niveau = mes_ues.filter(niveaux=niveau)
+            # Delegues actifs de ce niveau
+            from users.models import Utilisateur, StatutCompte
+            delegues = Utilisateur.objects.filter(
+                niveau_represente=niveau,
+                roles__nom_role=Role.DELEGUE,
+                statut=StatutCompte.ACTIF,
+            ).distinct()
+
+            result.append({
+                'niveau': {
+                    'id': niveau.id,
+                    'nom_niveau': niveau.nom_niveau,
+                    'filiere_nom': niveau.filiere.nom_filiere if niveau.filiere else None,
+                },
+                'ues': [
+                    {'id': ue.id, 'code_ue': ue.code_ue, 'libelle_ue': ue.libelle_ue}
+                    for ue in ues_du_niveau
+                ],
+                'delegues': [
+                    {
+                        'id': d.id,
+                        'nom_complet': f"{d.first_name} {d.last_name}",
+                        'email': d.email,
+                    }
+                    for d in delegues
+                ],
+            })
+
+        return Response(result)
 
 
 class FicheSuiviViewSet(viewsets.ModelViewSet):
@@ -106,6 +166,7 @@ class FicheSuiviViewSet(viewsets.ModelViewSet):
             qs = qs.filter(semestre__annee_academique_id=annee_id)
         else:
             # Pour enseignant/delegue : scoper par defaut a l'annee active
+            # Inclure aussi les fiches sans semestre (pas encore assigne)
             is_admin_or_chef = user.roles.filter(
                 nom_role__in=[Role.SUPER_ADMIN, Role.CHEF_DEPARTEMENT]
             ).exists() or user.is_superuser
@@ -113,7 +174,10 @@ class FicheSuiviViewSet(viewsets.ModelViewSet):
                 from academic.models import AnneeAcademique
                 annee_active = AnneeAcademique.objects.filter(est_active=True).first()
                 if annee_active:
-                    qs = qs.filter(semestre__annee_academique=annee_active)
+                    qs = qs.filter(
+                        Q(semestre__annee_academique=annee_active) |
+                        Q(semestre__isnull=True)
+                    )
 
         # Filtrage par role
         if user.roles.filter(nom_role=Role.SUPER_ADMIN).exists():
@@ -169,11 +233,13 @@ class FicheSuiviViewSet(viewsets.ModelViewSet):
         fiche.motif_refus = ""
         fiche.save()
 
-        if fiche.delegue and fiche.delegue.fcm_token:
-            send_notification(
-                fiche.delegue.fcm_token,
-                "Fiche validee",
-                f"Votre fiche pour {fiche.ue.code_ue} a ete validee."
+        if fiche.delegue:
+            create_and_send_notification(
+                recipient=fiche.delegue,
+                title="Fiche validee",
+                body=f"Votre fiche pour {fiche.ue.code_ue} a ete validee.",
+                notification_type=NotificationType.FICHE_VALIDEE,
+                related_object_id=fiche.id,
             )
 
         return Response(self.get_serializer(fiche).data, status=status.HTTP_200_OK)
@@ -201,11 +267,13 @@ class FicheSuiviViewSet(viewsets.ModelViewSet):
         fiche.date_validation = timezone.now()
         fiche.save()
 
-        if fiche.delegue and fiche.delegue.fcm_token:
-            send_notification(
-                fiche.delegue.fcm_token,
-                "Fiche refusee",
-                f"Votre fiche pour {fiche.ue.code_ue} a ete refusee. Motif: {motif}"
+        if fiche.delegue:
+            create_and_send_notification(
+                recipient=fiche.delegue,
+                title="Fiche refusee",
+                body=f"Votre fiche pour {fiche.ue.code_ue} a ete refusee. Motif: {motif}",
+                notification_type=NotificationType.FICHE_REFUSEE,
+                related_object_id=fiche.id,
             )
 
         return Response(self.get_serializer(fiche).data, status=status.HTTP_200_OK)
@@ -226,12 +294,14 @@ class FicheSuiviViewSet(viewsets.ModelViewSet):
         fiche.date_validation = None
         fiche.save()
 
-        if fiche.enseignant and fiche.enseignant.fcm_token:
+        if fiche.enseignant:
             delegue_name = fiche.delegue.get_full_name() if fiche.delegue else "Un delegue"
-            send_notification(
-                fiche.enseignant.fcm_token,
-                "Fiche resoumise",
-                f"{delegue_name} a resoumis une fiche pour {fiche.ue.code_ue}."
+            create_and_send_notification(
+                recipient=fiche.enseignant,
+                title="Fiche resoumise",
+                body=f"{delegue_name} a resoumis une fiche pour {fiche.ue.code_ue}.",
+                notification_type=NotificationType.FICHE_RESOUMISE,
+                related_object_id=fiche.id,
             )
 
         return Response(self.get_serializer(fiche).data, status=status.HTTP_200_OK)

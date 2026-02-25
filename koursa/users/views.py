@@ -11,6 +11,8 @@ from datetime import timedelta
 from .serializers import UtilisateurSerializer, RoleSerializer, PasswordConfirmationSerializer, ChangePasswordSerializer, MyTokenObtainPairSerializer
 from teaching.models import UniteEnseignement
 from academic.models import Departement
+from notifications.services import create_and_send_notification
+from notifications.models import NotificationType
 
 class UtilisateurViewSet(viewsets.ModelViewSet):
     queryset = Utilisateur.objects.all().prefetch_related('roles')
@@ -111,6 +113,14 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
 
         utilisateur.statut = StatutCompte.ACTIF
         utilisateur.save()
+
+        create_and_send_notification(
+            recipient=utilisateur,
+            title="Compte approuve",
+            body="Votre compte a ete approuve. Vous pouvez maintenant acceder a toutes les fonctionnalites.",
+            notification_type=NotificationType.COMPTE_APPROUVE,
+            related_object_id=utilisateur.id,
+        )
 
         serializer = self.get_serializer(utilisateur)
         return Response(serializer.data, status=status.HTTP_200_OK)
