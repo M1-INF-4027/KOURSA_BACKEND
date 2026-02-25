@@ -10,6 +10,7 @@ from .permissions import IsHoD, IsSuperAdmin, IsAdminOrIsSelf
 from datetime import timedelta
 from .serializers import UtilisateurSerializer, RoleSerializer, PasswordConfirmationSerializer, ChangePasswordSerializer, MyTokenObtainPairSerializer
 from teaching.models import UniteEnseignement
+from academic.models import Departement
 
 class UtilisateurViewSet(viewsets.ModelViewSet):
     queryset = Utilisateur.objects.all().prefetch_related('roles')
@@ -161,12 +162,74 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         fcm_token = request.data.get('fcm_token')
         if not fcm_token:
             return Response({"detail": "Le champ 'fcm_token' est requis."}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         request.user.fcm_token = fcm_token
         request.user.save()
-        
+
         return Response({"detail": "Token enregistré avec succès."}, status=status.HTTP_200_OK)
 
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated], url_path='mes-utilisateurs')
+    def mes_utilisateurs(self, request):
+        """Retourne les utilisateurs pertinents pour un délégué: chef, enseignants (avec UEs), co-délégués."""
+        user = request.user
+
+        if not user.roles.filter(nom_role=Role.DELEGUE).exists():
+            return Response({"detail": "Réservé aux délégués."}, status=status.HTTP_403_FORBIDDEN)
+
+        niveau = user.niveau_represente
+        if not niveau:
+            return Response({"detail": "Aucun niveau représenté assigné."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Nom de la classe
+        classe_nom = f"{niveau.filiere.nom_filiere} {niveau.nom_niveau}"
+
+        # Chef de département
+        departement = niveau.filiere.departement
+        chef = departement.chef_departement
+        chef_data = None
+        if chef:
+            chef_data = {
+                "id": chef.id,
+                "nom_complet": chef.get_full_name(),
+                "email": chef.email,
+            }
+
+        # Enseignants qui ont des UEs dans ce niveau, avec leurs UEs
+        ues_du_niveau = UniteEnseignement.objects.filter(niveaux=niveau).prefetch_related('enseignants')
+        enseignants_map = {}
+        for ue in ues_du_niveau:
+            for enseignant in ue.enseignants.all():
+                if enseignant.id not in enseignants_map:
+                    enseignants_map[enseignant.id] = {
+                        "id": enseignant.id,
+                        "nom_complet": enseignant.get_full_name(),
+                        "email": enseignant.email,
+                        "ues": [],
+                    }
+                enseignants_map[enseignant.id]["ues"].append({
+                    "id": ue.id,
+                    "code_ue": ue.code_ue,
+                    "libelle_ue": ue.libelle_ue,
+                })
+        enseignants_data = list(enseignants_map.values())
+
+        # Co-délégués du même niveau
+        delegues = Utilisateur.objects.filter(
+            niveau_represente=niveau,
+            roles__nom_role=Role.DELEGUE,
+            statut=StatutCompte.ACTIF,
+        ).exclude(pk=user.pk)
+        delegues_data = [
+            {"id": d.id, "nom_complet": d.get_full_name(), "email": d.email}
+            for d in delegues
+        ]
+
+        return Response({
+            "classe": classe_nom,
+            "chef": chef_data,
+            "enseignants": enseignants_data,
+            "delegues": delegues_data,
+        })
 
 
 class RoleViewSet(viewsets.ModelViewSet):
