@@ -54,13 +54,17 @@ class UtilisateurSerializer(serializers.ModelSerializer):
             is_delegue = any(role.nom_role == Role.DELEGUE for role in roles)
 
             if is_delegue and not niveau:
-                raise serializers.ValidationError({
-                    "niveau_represente": "Ce champ est obligatoire pour un utilisateur ayant le rôle de Délégué."
-                })
+                if self.instance and self.instance.niveau_represente:
+                    pass  # Le niveau existe deja sur l'instance
+                else:
+                    raise serializers.ValidationError({
+                        "niveau_represente": "Ce champ est obligatoire pour un utilisateur ayant le rôle de Délégué."
+                    })
 
-            # Empecher les non-admins d'assigner des roles privilegies
+        # Empecher les non-admins d'assigner des roles privilegies
+        if roles:
             request = self.context.get('request')
-            if request and roles:
+            if request:
                 privileged_roles = [Role.SUPER_ADMIN, Role.CHEF_DEPARTEMENT]
                 has_privileged = any(role.nom_role in privileged_roles for role in roles)
 

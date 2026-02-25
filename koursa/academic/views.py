@@ -14,8 +14,8 @@ class FaculteViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
-            permission_classes = [IsAuthenticated]
-        else: 
+            permission_classes = [AllowAny]
+        else:
             permission_classes = [IsSuperAdmin]
         return [permission() for permission in permission_classes]
 
@@ -26,7 +26,7 @@ class DepartementViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
-            permission_classes = [IsAuthenticated]
+            permission_classes = [AllowAny]
         else:
             permission_classes = [IsSuperAdmin]
         return [permission() for permission in permission_classes]
@@ -59,7 +59,7 @@ class DepartementViewSet(viewsets.ModelViewSet):
         self._sync_chef_role(old_chef, instance.chef_departement)
 
 class FiliereViewSet(viewsets.ModelViewSet):
-    queryset = Filiere.objects.select_related('departement').all()
+    queryset = Filiere.objects.select_related('departement', 'departement__faculte').all()
     serializer_class = FiliereSerializer
 
     def get_permissions(self):
