@@ -7,6 +7,7 @@ from .views import (
     ExportParUEView,
     ExportParEnseignantView,
     ExportHeuresView,
+    AdminOverviewView,
 )
 
 urlpatterns = [
@@ -17,4 +18,5 @@ urlpatterns = [
     path('export-par-ue/', ExportParUEView.as_view(), name='export-par-ue'),
     path('export-par-enseignant/', ExportParEnseignantView.as_view(), name='export-par-enseignant'),
     path('export-heures/', ExportHeuresView.as_view(), name='export-heures'),
+    path('admin-overview/', AdminOverviewView.as_view(), name='admin-overview'),
 ]

@@ -2,7 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
-from users.permissions import IsHoD
+from users.permissions import IsHoDOrSuperAdmin, IsSuperAdmin
 from teaching.models import FicheSuivi, StatutFiche
 from academic.models import Departement, Filiere, Niveau
 from users.models import Utilisateur, Role
@@ -50,10 +50,28 @@ def get_departement(user):
         return None
 
 
+def resolve_departement(request):
+    """Resolve the department for the current user.
+    Super admins can specify ?departement=ID, otherwise all departments.
+    HoDs always get their own department."""
+    is_super = request.user.roles.filter(nom_role=Role.SUPER_ADMIN).exists()
+    if is_super:
+        dept_id = request.query_params.get('departement')
+        if dept_id:
+            try:
+                return Departement.objects.get(id=int(dept_id))
+            except (Departement.DoesNotExist, ValueError):
+                return None
+        return None  # None means all departments for super admin
+    return get_departement(request.user)
+
+
 def get_fiches_queryset(departement, date_debut=None, date_fin=None, filiere_id=None, niveau_id=None, semestre=None, annee_academique_id=None):
+    base_filter = {'statut': StatutFiche.VALIDEE}
+    if departement is not None:
+        base_filter['ue__niveaux__filiere__departement'] = departement
     qs = FicheSuivi.objects.filter(
-        ue__niveaux__filiere__departement=departement,
-        statut=StatutFiche.VALIDEE,
+        **base_filter,
     ).select_related('ue', 'enseignant').distinct()
     if annee_academique_id:
         qs = qs.filter(semestre__annee_academique_id=annee_academique_id)
@@ -104,7 +122,10 @@ def get_niveau_label(niveau_id, filiere_id, departement):
     parts = []
     if filiere_id:
         try:
-            filiere = Filiere.objects.get(id=filiere_id, departement=departement)
+            filt = {'id': filiere_id}
+            if departement is not None:
+                filt['departement'] = departement
+            filiere = Filiere.objects.get(**filt)
             parts.append(filiere.nom_filiere.replace(' ', '_'))
         except Filiere.DoesNotExist:
             pass
@@ -211,12 +232,13 @@ class DashboardRootView(APIView):
 
 
 class DashboardStatsView(APIView):
-    permission_classes = [IsAuthenticated, IsHoD]
+    permission_classes = [IsAuthenticated, IsHoDOrSuperAdmin]
 
     def get(self, request, *args, **kwargs):
-        hod = request.user
-        departement = get_departement(hod)
-        if not departement:
+        departement = resolve_departement(request)
+        is_super = request.user.roles.filter(nom_role=Role.SUPER_ADMIN).exists()
+        # HoD must have a department
+        if not is_super and not departement:
             return Response(
                 {"detail": "Vous n'etes assigne a aucun departement."},
                 status=status.HTTP_404_NOT_FOUND
@@ -228,9 +250,9 @@ class DashboardStatsView(APIView):
         current_year = datetime.now().year
 
         # Base queryset filtered by dept + niveau/filiere/semestre
-        base_filter = {
-            'ue__niveaux__filiere__departement': departement,
-        }
+        base_filter = {}
+        if departement is not None:
+            base_filter['ue__niveaux__filiere__departement'] = departement
         if filiere_id:
             base_filter['ue__niveaux__filiere_id'] = filiere_id
         if niveau_id:
@@ -262,8 +284,12 @@ class DashboardStatsView(APIView):
         ).order_by('-total_duree')
 
         # Filieres et niveaux disponibles pour les selecteurs
-        filieres = Filiere.objects.filter(departement=departement).order_by('nom_filiere')
-        niveaux = Niveau.objects.filter(filiere__departement=departement).select_related('filiere').order_by('filiere__nom_filiere', 'nom_niveau')
+        if departement is not None:
+            filieres = Filiere.objects.filter(departement=departement).order_by('nom_filiere')
+            niveaux = Niveau.objects.filter(filiere__departement=departement).select_related('filiere').order_by('filiere__nom_filiere', 'nom_niveau')
+        else:
+            filieres = Filiere.objects.all().order_by('nom_filiere')
+            niveaux = Niveau.objects.all().select_related('filiere').order_by('filiere__nom_filiere', 'nom_niveau')
 
         data = {
             'heures_validees_ce_mois': round(heures_validees_mois.total_seconds() / 3600, 2),
@@ -288,11 +314,12 @@ class DashboardStatsView(APIView):
 
 class RecapitulatifView(APIView):
     """Recapitulatif JSON des heures par UE et par enseignant"""
-    permission_classes = [IsAuthenticated, IsHoD]
+    permission_classes = [IsAuthenticated, IsHoDOrSuperAdmin]
 
     def get(self, request, *args, **kwargs):
-        departement = get_departement(request.user)
-        if not departement:
+        departement = resolve_departement(request)
+        is_super = request.user.roles.filter(nom_role=Role.SUPER_ADMIN).exists()
+        if not is_super and not departement:
             return Response({"detail": "Vous n'etes assigne a aucun departement."}, status=status.HTTP_404_NOT_FOUND)
 
         date_debut, date_fin, error = parse_dates(request)
@@ -318,9 +345,13 @@ class RecapitulatifView(APIView):
 
         total_heures_global = fiches.aggregate(t=Sum('duree'))['t'] or timedelta(0)
 
-        # Filieres et niveaux disponibles pour ce departement
-        filieres = Filiere.objects.filter(departement=departement).order_by('nom_filiere')
-        niveaux = Niveau.objects.filter(filiere__departement=departement).select_related('filiere').order_by('filiere__nom_filiere', 'nom_niveau')
+        # Filieres et niveaux disponibles
+        if departement is not None:
+            filieres = Filiere.objects.filter(departement=departement).order_by('nom_filiere')
+            niveaux = Niveau.objects.filter(filiere__departement=departement).select_related('filiere').order_by('filiere__nom_filiere', 'nom_niveau')
+        else:
+            filieres = Filiere.objects.all().order_by('nom_filiere')
+            niveaux = Niveau.objects.all().select_related('filiere').order_by('filiere__nom_filiere', 'nom_niveau')
 
         data = {
             'total_heures': round(total_heures_global.total_seconds() / 3600, 2),
@@ -354,11 +385,12 @@ class RecapitulatifView(APIView):
 
 class ExportBilanView(APIView):
     """Export global au format bilan (identique au fichier de reference)"""
-    permission_classes = [IsAuthenticated, IsHoD]
+    permission_classes = [IsAuthenticated, IsHoDOrSuperAdmin]
 
     def get(self, request, *args, **kwargs):
-        departement = get_departement(request.user)
-        if not departement:
+        departement = resolve_departement(request)
+        is_super = request.user.roles.filter(nom_role=Role.SUPER_ADMIN).exists()
+        if not is_super and not departement:
             return Response({"detail": "Vous n'etes assigne a aucun departement."}, status=status.HTTP_404_NOT_FOUND)
 
         date_debut, date_fin, error = parse_dates(request)
@@ -390,11 +422,12 @@ class ExportBilanView(APIView):
 
 class ExportParUEView(APIView):
     """Export par UE - une UE specifique ou toutes les UEs (un onglet par UE)"""
-    permission_classes = [IsAuthenticated, IsHoD]
+    permission_classes = [IsAuthenticated, IsHoDOrSuperAdmin]
 
     def get(self, request, *args, **kwargs):
-        departement = get_departement(request.user)
-        if not departement:
+        departement = resolve_departement(request)
+        is_super = request.user.roles.filter(nom_role=Role.SUPER_ADMIN).exists()
+        if not is_super and not departement:
             return Response({"detail": "Vous n'etes assigne a aucun departement."}, status=status.HTTP_404_NOT_FOUND)
 
         date_debut, date_fin, error = parse_dates(request)
@@ -456,18 +489,20 @@ class ExportParUEView(APIView):
             ws_recap.column_dimensions['B'].width = 14
             ws_recap.column_dimensions['C'].width = 14
 
-            filename = f"fiches_par_ue_{departement.nom_departement.lower().replace(' ', '_')}.xlsx"
+            dept_label = departement.nom_departement.lower().replace(' ', '_') if departement else 'tous'
+            filename = f"fiches_par_ue_{dept_label}.xlsx"
 
         return excel_response(wb, filename)
 
 
 class ExportParEnseignantView(APIView):
     """Export par enseignant - un enseignant specifique ou tous (un onglet par enseignant)"""
-    permission_classes = [IsAuthenticated, IsHoD]
+    permission_classes = [IsAuthenticated, IsHoDOrSuperAdmin]
 
     def get(self, request, *args, **kwargs):
-        departement = get_departement(request.user)
-        if not departement:
+        departement = resolve_departement(request)
+        is_super = request.user.roles.filter(nom_role=Role.SUPER_ADMIN).exists()
+        if not is_super and not departement:
             return Response({"detail": "Vous n'etes assigne a aucun departement."}, status=status.HTTP_404_NOT_FOUND)
 
         date_debut, date_fin, error = parse_dates(request)
@@ -531,19 +566,20 @@ class ExportParEnseignantView(APIView):
             ws_recap.column_dimensions['B'].width = 14
             ws_recap.column_dimensions['C'].width = 14
 
-            filename = f"fiches_par_enseignant_{departement.nom_departement.lower().replace(' ', '_')}.xlsx"
+            dept_label = departement.nom_departement.lower().replace(' ', '_') if departement else 'tous'
+            filename = f"fiches_par_enseignant_{dept_label}.xlsx"
 
         return excel_response(wb, filename)
 
 
 class ExportHeuresView(APIView):
     """Export ancien (compatibilite) - heures par enseignant pour un mois donne"""
-    permission_classes = [IsAuthenticated, IsHoD]
+    permission_classes = [IsAuthenticated, IsHoDOrSuperAdmin]
 
     def get(self, request, *args, **kwargs):
-        hod = request.user
-        departement = get_departement(hod)
-        if not departement:
+        departement = resolve_departement(request)
+        is_super = request.user.roles.filter(nom_role=Role.SUPER_ADMIN).exists()
+        if not is_super and not departement:
             return Response({"detail": "Vous n'etes assigne a aucun departement."}, status=status.HTTP_404_NOT_FOUND)
 
         try:
@@ -552,11 +588,16 @@ class ExportHeuresView(APIView):
         except (ValueError, TypeError):
             return Response({"detail": "Parametres annee/mois invalides."}, status=status.HTTP_400_BAD_REQUEST)
 
+        base_filter = {
+            'statut': StatutFiche.VALIDEE,
+            'date_cours__year': year,
+            'date_cours__month': month,
+        }
+        if departement is not None:
+            base_filter['ue__niveaux__filiere__departement'] = departement
+
         heures_par_enseignant = FicheSuivi.objects.filter(
-            ue__niveaux__filiere__departement=departement,
-            statut=StatutFiche.VALIDEE,
-            date_cours__year=year,
-            date_cours__month=month
+            **base_filter,
         ).values(
             'enseignant__id',
             'enseignant__first_name',
@@ -585,5 +626,53 @@ class ExportHeuresView(APIView):
         ws.column_dimensions['B'].width = 20
         ws.column_dimensions['C'].width = 18
 
-        filename = f"export_heures_{departement.nom_departement.lower()}_{month:02d}_{year}.xlsx"
+        dept_label = departement.nom_departement.lower() if departement else 'tous'
+        filename = f"export_heures_{dept_label}_{month:02d}_{year}.xlsx"
         return excel_response(wb, filename)
+
+
+class AdminOverviewView(APIView):
+    """Vue d'ensemble pour le super admin : stats par departement"""
+    permission_classes = [IsAuthenticated, IsSuperAdmin]
+
+    def get(self, request, *args, **kwargs):
+        departements = Departement.objects.select_related('faculte', 'chef_departement').all()
+
+        result = []
+        for dept in departements:
+            fiches = FicheSuivi.objects.filter(
+                ue__niveaux__filiere__departement=dept,
+            ).distinct()
+
+            total = fiches.count()
+            soumises = fiches.filter(statut=StatutFiche.SOUMISE).count()
+            validees = fiches.filter(statut=StatutFiche.VALIDEE).count()
+            refusees = fiches.filter(statut=StatutFiche.REFUSEE).count()
+
+            chef = dept.chef_departement
+            chef_nom = f"{chef.last_name} {chef.first_name}".strip() if chef else None
+
+            result.append({
+                'id': dept.id,
+                'nom': dept.nom_departement,
+                'faculte': dept.faculte.nom_faculte if dept.faculte else None,
+                'chef': chef_nom,
+                'total': total,
+                'soumises': soumises,
+                'validees': validees,
+                'refusees': refusees,
+            })
+
+        # Totaux globaux
+        all_fiches = FicheSuivi.objects.all()
+        totaux = {
+            'total': all_fiches.count(),
+            'soumises': all_fiches.filter(statut=StatutFiche.SOUMISE).count(),
+            'validees': all_fiches.filter(statut=StatutFiche.VALIDEE).count(),
+            'refusees': all_fiches.filter(statut=StatutFiche.REFUSEE).count(),
+        }
+
+        return Response({
+            'departements': result,
+            'totaux': totaux,
+        })

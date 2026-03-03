@@ -14,6 +14,14 @@ class IsHoD(BasePermission):
             return False
         return request.user.roles.filter(nom_role=Role.CHEF_DEPARTEMENT).exists()
 
+class IsHoDOrSuperAdmin(BasePermission):
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated or not request.user.is_active:
+            return False
+        return request.user.roles.filter(
+            nom_role__in=[Role.CHEF_DEPARTEMENT, Role.SUPER_ADMIN]
+        ).exists()
+
 class IsEnseignant(BasePermission):
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated or not request.user.is_active:
