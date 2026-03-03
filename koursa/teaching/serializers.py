@@ -29,6 +29,7 @@ class UniteEnseignementSerializer(serializers.ModelSerializer):
     enseignants_details = EnseignantSimpleSerializer(source='enseignants', many=True, read_only=True)
     niveaux_details = NiveauSimpleSerializer(source='niveaux', many=True, read_only=True)
     semestre_info = serializers.SerializerMethodField()
+    semestre = serializers.IntegerField(required=False)
 
     class Meta:
         model = UniteEnseignement
@@ -37,6 +38,9 @@ class UniteEnseignementSerializer(serializers.ModelSerializer):
             'semestre_info', 'enseignants', 'enseignants_details',
             'niveaux', 'niveaux_details'
         ]
+        # Desactiver le validateur unique_together auto-genere par DRF
+        # car semestre_obj est nullable et on gere la validation manuellement
+        validators = []
 
     def get_semestre_info(self, obj):
         if obj.semestre_obj:
@@ -46,6 +50,27 @@ class UniteEnseignementSerializer(serializers.ModelSerializer):
                 'annee': obj.semestre_obj.annee_academique.libelle,
             }
         return None
+
+    def validate(self, attrs):
+        # Auto-populate semestre from semestre_obj if not provided
+        semestre_obj = attrs.get('semestre_obj')
+        if semestre_obj and not attrs.get('semestre'):
+            attrs['semestre'] = semestre_obj.numero
+        elif not attrs.get('semestre') and not semestre_obj:
+            attrs['semestre'] = 1  # Default
+
+        # Validation unique_together manuelle (code_ue + semestre_obj)
+        code_ue = attrs.get('code_ue', getattr(self.instance, 'code_ue', None))
+        sem_obj = attrs.get('semestre_obj', getattr(self.instance, 'semestre_obj', None))
+        qs = UniteEnseignement.objects.filter(code_ue=code_ue, semestre_obj=sem_obj)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError(
+                {'code_ue': f"Une UE avec le code '{code_ue}' existe deja pour ce semestre."}
+            )
+
+        return attrs
 
 
 class FicheSuiviSerializer(serializers.ModelSerializer):

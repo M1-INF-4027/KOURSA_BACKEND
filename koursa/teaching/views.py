@@ -29,7 +29,7 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return UniteEnseignement.objects.none()
 
-        qs = self.queryset
+        qs = self.queryset.all()
 
         # Scoper par semestre/annee si parametre fourni
         semestre_id = self.request.query_params.get('semestre_id')
@@ -43,7 +43,7 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
             # Inclure aussi les UEs sans semestre_obj (pas encore assignees)
             is_admin_or_chef = user.roles.filter(
                 nom_role__in=[Role.SUPER_ADMIN, Role.CHEF_DEPARTEMENT]
-            ).exists() or user.is_superuser
+            ).exists() or user.is_superuser or user.is_staff
             if not is_admin_or_chef:
                 from academic.models import AnneeAcademique
                 annee_active = AnneeAcademique.objects.filter(est_active=True).first()
@@ -54,7 +54,7 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
                     )
 
         # Super admin et chef voient toutes les UEs (du scope)
-        if user.roles.filter(nom_role=Role.SUPER_ADMIN).exists() or user.is_superuser:
+        if user.roles.filter(nom_role=Role.SUPER_ADMIN).exists() or user.is_superuser or user.is_staff:
             return qs
         if user.roles.filter(nom_role=Role.CHEF_DEPARTEMENT).exists() and getattr(user, 'departement_gere', None):
             return qs.filter(niveaux__filiere__departement=user.departement_gere).distinct()
