@@ -82,6 +82,8 @@ class FicheSuiviSerializer(serializers.ModelSerializer):
     classe = serializers.SerializerMethodField()
     niveaux_details = serializers.SerializerMethodField()
 
+    nom_salle = serializers.CharField(source='salle.nom_salle', read_only=True, default=None)
+
     semestre_info = serializers.SerializerMethodField()
 
     class Meta:
@@ -90,7 +92,7 @@ class FicheSuiviSerializer(serializers.ModelSerializer):
             'id', 'ue', 'code_ue', 'nom_ue', 'semestre',
             'semestre_info', 'classe', 'niveaux_details',
             'delegue', 'nom_delegue', 'enseignant', 'nom_enseignant',
-            'date_cours', 'heure_debut', 'heure_fin', 'duree', 'salle', 'type_seance',
+            'date_cours', 'heure_debut', 'heure_fin', 'duree', 'salle', 'nom_salle', 'type_seance',
             'titre_chapitre', 'contenu_aborde', 'statut', 'motif_refus',
             'date_soumission', 'date_validation'
         ]

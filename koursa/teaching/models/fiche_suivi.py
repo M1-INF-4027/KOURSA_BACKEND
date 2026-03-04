@@ -42,7 +42,14 @@ class FicheSuivi(models.Model):
     heure_debut = models.TimeField()
     heure_fin = models.TimeField()
     duree = models.DurationField(blank=True, editable=False) # Calculée automatiquement
-    salle = models.CharField(max_length=50, blank=True)
+    salle = models.ForeignKey(
+        'academic.Salle',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='fiches_suivi',
+        verbose_name="Salle"
+    )
     type_seance = models.CharField(max_length=2, choices=TypeSeance.choices)
     
     titre_chapitre = models.CharField(max_length=255)

@@ -8,7 +8,7 @@ from datetime import date
 
 from .models import (
     AnneeAcademique, Semestre, Departement, Filiere, Niveau,
-    Faculte, HistoriqueChefDepartement,
+    Faculte, HistoriqueChefDepartement, Salle,
 )
 from .serializers import (
     AnneeAcademiqueSerializer,
@@ -200,6 +200,7 @@ class SetupChecklistView(APIView):
                     'departements_crees': False,
                     'filieres_creees': False,
                     'niveaux_crees': False,
+                    'salles_creees': False,
                     'ues_creees': False,
                     'ues_sans_enseignant': 0,
                     'departements_sans_chef': Departement.objects.count(),
@@ -219,6 +220,7 @@ class SetupChecklistView(APIView):
                 'departements_crees': Departement.objects.exists(),
                 'filieres_creees': Filiere.objects.exists(),
                 'niveaux_crees': Niveau.objects.exists(),
+                'salles_creees': Salle.objects.filter(est_active=True).exists(),
                 'ues_creees': ues_in_year.exists(),
                 'ues_sans_enseignant': ues_in_year.filter(enseignants__isnull=True).count(),
                 'departements_sans_chef': Departement.objects.filter(chef_departement__isnull=True).count(),

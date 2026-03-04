@@ -1,6 +1,6 @@
 import re
 from rest_framework import serializers
-from .models import Faculte, Departement, Filiere, Niveau, AnneeAcademique, Semestre, HistoriqueChefDepartement
+from .models import Faculte, Departement, Filiere, Niveau, AnneeAcademique, Semestre, HistoriqueChefDepartement, Salle
 
 class FaculteSerializer(serializers.ModelSerializer):
     class Meta:
@@ -30,6 +30,12 @@ class NiveauSerializer(serializers.ModelSerializer):
     class Meta:
         model = Niveau
         fields = ['id', 'nom_niveau', 'filiere', 'nom_filiere']
+
+
+class SalleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Salle
+        fields = ['id', 'nom_salle', 'capacite', 'batiment', 'est_active']
 
 
 class SemestreSerializer(serializers.ModelSerializer):

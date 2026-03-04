@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Faculte, Departement, Filiere, Niveau, AnneeAcademique, Semestre, HistoriqueChefDepartement
+from .models import Faculte, Departement, Filiere, Niveau, AnneeAcademique, Semestre, HistoriqueChefDepartement, Salle
 
 @admin.register(Faculte)
 class FaculteAdmin(admin.ModelAdmin):
@@ -46,6 +46,13 @@ class AnneeAcademiqueAdmin(admin.ModelAdmin):
 class SemestreAdmin(admin.ModelAdmin):
     list_display = ('__str__', 'date_debut', 'date_fin', 'est_actif')
     list_filter = ('annee_academique', 'est_actif')
+
+
+@admin.register(Salle)
+class SalleAdmin(admin.ModelAdmin):
+    list_display = ('nom_salle', 'batiment', 'capacite', 'est_active')
+    search_fields = ('nom_salle', 'batiment')
+    list_filter = ('est_active', 'batiment')
 
 
 @admin.register(HistoriqueChefDepartement)

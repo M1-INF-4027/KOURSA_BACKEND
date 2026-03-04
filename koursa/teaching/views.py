@@ -124,7 +124,7 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
 
 
 class FicheSuiviViewSet(viewsets.ModelViewSet):
-    queryset = FicheSuivi.objects.select_related('ue', 'delegue', 'enseignant').prefetch_related('ue__niveaux__filiere').all()
+    queryset = FicheSuivi.objects.select_related('ue', 'delegue', 'enseignant', 'salle').prefetch_related('ue__niveaux__filiere').all()
     serializer_class = FicheSuiviSerializer
 
     filterset_fields = ['statut', 'date_cours', 'enseignant', 'delegue', 'ue']
@@ -312,3 +312,65 @@ class FicheSuiviViewSet(viewsets.ModelViewSet):
         fiches = self.get_queryset().filter(statut=StatutFiche.SOUMISE)
         serializer = self.get_serializer(fiches, many=True)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['post'], url_path='check-conflicts')
+    def check_conflicts(self, request):
+        """Detecter les conflits de salle et d'enseignant pour un creneau donne."""
+        salle_id = request.data.get('salle')
+        enseignant_id = request.data.get('enseignant')
+        date_cours = request.data.get('date_cours')
+        heure_debut = request.data.get('heure_debut')
+        heure_fin = request.data.get('heure_fin')
+        exclude_fiche_id = request.data.get('exclude_fiche_id')
+
+        if not date_cours or not heure_debut or not heure_fin:
+            return Response({'conflicts': []})
+
+        # Base queryset : fiches SOUMISE ou VALIDEE, meme date, horaire chevauchant
+        base_qs = FicheSuivi.objects.filter(
+            date_cours=date_cours,
+            statut__in=[StatutFiche.SOUMISE, StatutFiche.VALIDEE],
+            heure_debut__lt=heure_fin,
+            heure_fin__gt=heure_debut,
+        ).select_related('ue', 'enseignant', 'salle')
+
+        if exclude_fiche_id:
+            base_qs = base_qs.exclude(pk=exclude_fiche_id)
+
+        conflicts = []
+
+        # Conflit salle
+        if salle_id:
+            salle_conflicts = base_qs.filter(salle_id=salle_id)
+            for fiche in salle_conflicts:
+                salle_nom = fiche.salle.nom_salle if fiche.salle else ''
+                conflicts.append({
+                    'type': 'salle',
+                    'message': f"La salle {salle_nom} est deja occupee de {fiche.heure_debut.strftime('%H:%M')} a {fiche.heure_fin.strftime('%H:%M')} ({fiche.ue.code_ue})",
+                    'fiche': {
+                        'id': fiche.id,
+                        'code_ue': fiche.ue.code_ue,
+                        'enseignant': f"{fiche.enseignant.first_name} {fiche.enseignant.last_name}" if fiche.enseignant else None,
+                        'heure_debut': fiche.heure_debut.strftime('%H:%M'),
+                        'heure_fin': fiche.heure_fin.strftime('%H:%M'),
+                    }
+                })
+
+        # Conflit enseignant
+        if enseignant_id:
+            enseignant_conflicts = base_qs.filter(enseignant_id=enseignant_id)
+            for fiche in enseignant_conflicts:
+                salle_nom = fiche.salle.nom_salle if fiche.salle else '?'
+                conflicts.append({
+                    'type': 'enseignant',
+                    'message': f"L'enseignant a deja un cours de {fiche.heure_debut.strftime('%H:%M')} a {fiche.heure_fin.strftime('%H:%M')} ({fiche.ue.code_ue}) en salle {salle_nom}",
+                    'fiche': {
+                        'id': fiche.id,
+                        'code_ue': fiche.ue.code_ue,
+                        'salle': salle_nom,
+                        'heure_debut': fiche.heure_debut.strftime('%H:%M'),
+                        'heure_fin': fiche.heure_fin.strftime('%H:%M'),
+                    }
+                })
+
+        return Response({'conflicts': conflicts})

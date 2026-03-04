@@ -2,10 +2,11 @@ from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from users.permissions import IsSuperAdmin
 from users.models import Role
-from .models import Faculte, Departement, Filiere, Niveau, AnneeAcademique, Semestre, HistoriqueChefDepartement
+from .models import Faculte, Departement, Filiere, Niveau, AnneeAcademique, Semestre, HistoriqueChefDepartement, Salle
 from .serializers import (
     FaculteSerializer, DepartementSerializer, FiliereSerializer, NiveauSerializer,
     AnneeAcademiqueSerializer, SemestreSerializer, HistoriqueChefSerializer,
+    SalleSerializer,
 )
 
 class FaculteViewSet(viewsets.ModelViewSet):
@@ -72,6 +73,18 @@ class FiliereViewSet(viewsets.ModelViewSet):
 class NiveauViewSet(viewsets.ModelViewSet):
     queryset = Niveau.objects.select_related('filiere').all()
     serializer_class = NiveauSerializer
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            permission_classes = [AllowAny]
+        else:
+            permission_classes = [IsSuperAdmin]
+        return [permission() for permission in permission_classes]
+
+
+class SalleViewSet(viewsets.ModelViewSet):
+    queryset = Salle.objects.all()
+    serializer_class = SalleSerializer
 
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
