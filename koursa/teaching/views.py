@@ -57,7 +57,10 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
         if user.roles.filter(nom_role=Role.SUPER_ADMIN).exists() or user.is_superuser or user.is_staff:
             return qs
         if user.roles.filter(nom_role=Role.CHEF_DEPARTEMENT).exists() and getattr(user, 'departement_gere', None):
-            return qs.filter(niveaux__filiere__departement=user.departement_gere).distinct()
+            return qs.filter(
+                Q(niveaux__filiere__departement=user.departement_gere) |
+                Q(niveaux__isnull=True)
+            ).distinct()
 
         if user.roles.filter(nom_role=Role.DELEGUE).exists():
             if user.niveau_represente:
