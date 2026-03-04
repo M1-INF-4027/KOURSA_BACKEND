@@ -8,6 +8,10 @@ class StatutCompte(models.TextChoices):
     ACTIF = 'ACTIF', 'Actif'
     INACTIF = 'INACTIF', 'Inactif'
 
+class AuthProvider(models.TextChoices):
+    PASSWORD = 'password', 'Mot de passe'
+    GOOGLE = 'google', 'Google'
+
 class UtilisateurManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
         if not email:
@@ -53,6 +57,13 @@ class Utilisateur(AbstractUser):
         null=True,
         blank=True,
         related_name='delegues'
+    )
+
+    auth_provider = models.CharField(
+        max_length=20,
+        choices=AuthProvider.choices,
+        default=AuthProvider.PASSWORD,
+        verbose_name="Methode d'authentification"
     )
 
     fcm_token = models.CharField(

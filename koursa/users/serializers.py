@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Utilisateur, Role, StatutCompte
+from .models import Utilisateur, Role, StatutCompte, EmailWhitelist
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 
@@ -34,10 +34,10 @@ class UtilisateurSerializer(serializers.ModelSerializer):
         model = Utilisateur
         fields = [
             'id', 'email', 'first_name', 'last_name', 'password',
-            'statut', 'roles', 'roles_ids', 'niveau_represente', 'fcm_token',
+            'statut', 'auth_provider', 'roles', 'roles_ids', 'niveau_represente', 'fcm_token',
             'is_superuser', 'is_staff'
         ]
-        read_only_fields = ['statut', 'is_superuser', 'is_staff']
+        read_only_fields = ['statut', 'auth_provider', 'is_superuser', 'is_staff']
 
     def validate(self, attrs):
         # Password obligatoire uniquement a la creation
@@ -111,6 +111,13 @@ class UtilisateurSerializer(serializers.ModelSerializer):
             instance.save()
 
         return instance
+
+
+class EmailWhitelistSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmailWhitelist
+        fields = ['id', 'email', 'role_type', 'departement', 'ajoute_par', 'date_ajout']
+        read_only_fields = ['id', 'ajoute_par', 'date_ajout']
 
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):

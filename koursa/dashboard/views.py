@@ -3,11 +3,11 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from users.permissions import IsHoDOrSuperAdmin, IsSuperAdmin
-from teaching.models import FicheSuivi, StatutFiche
-from academic.models import Departement, Filiere, Niveau
+from teaching.models import FicheSuivi, StatutFiche, UniteEnseignement
+from academic.models import Departement, Filiere, Niveau, Semestre
 from users.models import Utilisateur, Role
 from django.db.models import Sum, Count
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from django.http import HttpResponse
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
@@ -675,4 +675,265 @@ class AdminOverviewView(APIView):
         return Response({
             'departements': result,
             'totaux': totaux,
+        })
+
+
+def get_monday(d=None):
+    """Retourne le lundi de la semaine pour une date donnee."""
+    if d is None:
+        d = date.today()
+    return d - timedelta(days=d.weekday())
+
+
+class WeeklyTrackingView(APIView):
+    """Suivi hebdomadaire pour le chef de departement."""
+    permission_classes = [IsAuthenticated, IsHoDOrSuperAdmin]
+
+    def get(self, request):
+        # Parse semaine param
+        semaine_str = request.query_params.get('semaine')
+        if semaine_str:
+            try:
+                monday = datetime.strptime(semaine_str, '%Y-%m-%d').date()
+            except ValueError:
+                return Response(
+                    {'detail': 'Format de date invalide. Utilisez YYYY-MM-DD.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        else:
+            monday = get_monday()
+
+        sunday = monday + timedelta(days=6)
+
+        departement = resolve_departement(request)
+        is_super = request.user.roles.filter(nom_role=Role.SUPER_ADMIN).exists()
+        if not is_super and not departement:
+            return Response(
+                {'detail': 'Vous n\'etes assigne a aucun departement.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Trouver le semestre actif
+        semestre_actif = Semestre.objects.filter(est_actif=True).first()
+        if not semestre_actif:
+            return Response(
+                {'detail': 'Aucun semestre actif.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Construire la structure par filiere/niveau/UE
+        if departement is not None:
+            filieres = Filiere.objects.filter(departement=departement).order_by('nom_filiere')
+        else:
+            filieres = Filiere.objects.all().order_by('nom_filiere')
+
+        stats_total = 0
+        stats_validees = 0
+        stats_soumises = 0
+        stats_manquantes = 0
+
+        filieres_data = []
+        for filiere in filieres:
+            niveaux = Niveau.objects.filter(filiere=filiere).order_by('nom_niveau')
+            niveaux_data = []
+            for niveau in niveaux:
+                ues = UniteEnseignement.objects.filter(
+                    niveaux=niveau,
+                    semestre_obj=semestre_actif,
+                ).distinct().order_by('code_ue')
+
+                ues_data = []
+                for ue in ues:
+                    fiches = FicheSuivi.objects.filter(
+                        ue=ue,
+                        date_cours__gte=monday,
+                        date_cours__lte=sunday,
+                    ).order_by('date_cours')
+
+                    has_validee = fiches.filter(statut=StatutFiche.VALIDEE).exists()
+                    has_soumise = fiches.filter(statut=StatutFiche.SOUMISE).exists()
+
+                    if has_validee:
+                        statut = 'validee'
+                        stats_validees += 1
+                    elif has_soumise:
+                        statut = 'soumise'
+                        stats_soumises += 1
+                    else:
+                        statut = 'aucune_fiche'
+                        stats_manquantes += 1
+                    stats_total += 1
+
+                    enseignants = ue.enseignants.all()
+                    enseignants_data = [
+                        {
+                            'id': e.id,
+                            'nom': f"{e.last_name} {e.first_name}".strip(),
+                            'email': e.email,
+                        }
+                        for e in enseignants
+                    ]
+
+                    # Trouver le delegue du niveau
+                    delegue = Utilisateur.objects.filter(niveau_represente=niveau).first()
+                    delegue_data = None
+                    if delegue:
+                        delegue_data = {
+                            'id': delegue.id,
+                            'nom': f"{delegue.last_name} {delegue.first_name}".strip(),
+                        }
+
+                    fiches_data = [
+                        {
+                            'id': f.id,
+                            'statut': f.statut,
+                            'date_cours': str(f.date_cours),
+                        }
+                        for f in fiches
+                    ]
+
+                    ues_data.append({
+                        'id': ue.id,
+                        'code_ue': ue.code_ue,
+                        'libelle_ue': ue.libelle_ue,
+                        'enseignants': enseignants_data,
+                        'delegue': delegue_data,
+                        'statut': statut,
+                        'fiches': fiches_data,
+                    })
+
+                if ues_data:
+                    niveaux_data.append({
+                        'id': niveau.id,
+                        'nom': niveau.nom_niveau,
+                        'ues': ues_data,
+                    })
+
+            if niveaux_data:
+                filieres_data.append({
+                    'id': filiere.id,
+                    'nom': filiere.nom_filiere,
+                    'niveaux': niveaux_data,
+                })
+
+        return Response({
+            'semaine': str(monday),
+            'departement': departement.nom_departement if departement else 'Tous',
+            'filieres': filieres_data,
+            'stats': {
+                'total_ues': stats_total,
+                'validees': stats_validees,
+                'soumises': stats_soumises,
+                'manquantes': stats_manquantes,
+            },
+        })
+
+
+class EnseignantWeeklyTrackingView(APIView):
+    """Suivi hebdomadaire pour l'enseignant connecte."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        semaine_str = request.query_params.get('semaine')
+        if semaine_str:
+            try:
+                monday = datetime.strptime(semaine_str, '%Y-%m-%d').date()
+            except ValueError:
+                return Response(
+                    {'detail': 'Format de date invalide. Utilisez YYYY-MM-DD.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        else:
+            monday = get_monday()
+
+        sunday = monday + timedelta(days=6)
+
+        # Semestre actif
+        semestre_actif = Semestre.objects.filter(est_actif=True).first()
+        if not semestre_actif:
+            return Response(
+                {'detail': 'Aucun semestre actif.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # UEs de l'enseignant pour le semestre actif
+        ues = UniteEnseignement.objects.filter(
+            enseignants=request.user,
+            semestre_obj=semestre_actif,
+        ).distinct().order_by('code_ue')
+
+        stats_total = 0
+        stats_validees = 0
+        stats_soumises = 0
+        stats_manquantes = 0
+
+        ues_data = []
+        for ue in ues:
+            fiches = FicheSuivi.objects.filter(
+                ue=ue,
+                date_cours__gte=monday,
+                date_cours__lte=sunday,
+            ).order_by('date_cours')
+
+            has_validee = fiches.filter(statut=StatutFiche.VALIDEE).exists()
+            has_soumise = fiches.filter(statut=StatutFiche.SOUMISE).exists()
+
+            if has_validee:
+                statut = 'validee'
+                stats_validees += 1
+            elif has_soumise:
+                statut = 'soumise'
+                stats_soumises += 1
+            else:
+                statut = 'aucune_fiche'
+                stats_manquantes += 1
+            stats_total += 1
+
+            # Niveaux de cette UE
+            niveaux = ue.niveaux.all().select_related('filiere')
+            niveaux_labels = [
+                f"{n.nom_niveau} {n.filiere.nom_filiere}" for n in niveaux
+            ]
+
+            # Delegues des niveaux lies a cette UE
+            delegues = Utilisateur.objects.filter(
+                niveau_represente__in=ue.niveaux.all()
+            ).distinct()
+            delegues_data = [
+                {
+                    'id': d.id,
+                    'nom': f"{d.last_name} {d.first_name}".strip(),
+                    'niveau': f"{d.niveau_represente.nom_niveau} {d.niveau_represente.filiere.nom_filiere}" if d.niveau_represente else '',
+                }
+                for d in delegues
+            ]
+
+            fiches_data = [
+                {
+                    'id': f.id,
+                    'statut': f.statut,
+                    'date_cours': str(f.date_cours),
+                }
+                for f in fiches
+            ]
+
+            ues_data.append({
+                'id': ue.id,
+                'code_ue': ue.code_ue,
+                'libelle_ue': ue.libelle_ue,
+                'niveaux': niveaux_labels,
+                'statut': statut,
+                'fiches': fiches_data,
+                'delegues': delegues_data,
+            })
+
+        return Response({
+            'semaine': str(monday),
+            'ues': ues_data,
+            'stats': {
+                'total': stats_total,
+                'validees': stats_validees,
+                'soumises': stats_soumises,
+                'manquantes': stats_manquantes,
+            },
         })

@@ -1,18 +1,25 @@
+import logging
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.throttling import AnonRateThrottle
-from rest_framework_simplejwt.tokens import AccessToken
+from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
-from .models import Utilisateur, Role, StatutCompte
-from .permissions import IsHoD, IsSuperAdmin, IsAdminOrIsSelf
+from django.conf import settings
+import firebase_admin
+from firebase_admin import auth as firebase_auth
+from .models import Utilisateur, Role, StatutCompte, AuthProvider, EmailWhitelist
+from .permissions import IsHoD, IsSuperAdmin, IsHoDOrSuperAdmin, IsAdminOrIsSelf
 from datetime import timedelta
-from .serializers import UtilisateurSerializer, RoleSerializer, PasswordConfirmationSerializer, ChangePasswordSerializer, MyTokenObtainPairSerializer
+from .serializers import UtilisateurSerializer, RoleSerializer, PasswordConfirmationSerializer, ChangePasswordSerializer, MyTokenObtainPairSerializer, EmailWhitelistSerializer
 from teaching.models import UniteEnseignement
 from academic.models import Departement
 from notifications.services import create_and_send_notification
 from notifications.models import NotificationType
+
+logger = logging.getLogger('koursa')
 
 class UtilisateurViewSet(viewsets.ModelViewSet):
     queryset = Utilisateur.objects.all().prefetch_related('roles')
@@ -136,11 +143,19 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
 
         self.perform_create(serializer)
 
+        user = serializer.instance
+
         # Si un admin crée le compte, l'activer directement
         if request.user.is_authenticated:
             is_admin = request.user.roles.filter(nom_role=Role.SUPER_ADMIN).exists() or request.user.is_superuser
             if is_admin:
-                user = serializer.instance
+                user.statut = StatutCompte.ACTIF
+                user.save()
+
+        # Auto-activation si l'email est dans la whitelist
+        if user.statut != StatutCompte.ACTIF:
+            entry = EmailWhitelist.objects.filter(email__iexact=user.email).first()
+            if entry:
                 user.statut = StatutCompte.ACTIF
                 user.save()
 
@@ -254,6 +269,84 @@ class RoleViewSet(viewsets.ModelViewSet):
         return [permission() for permission in permission_classes]
     
 
+class EmailWhitelistViewSet(viewsets.ModelViewSet):
+    serializer_class = EmailWhitelistSerializer
+    permission_classes = [IsHoDOrSuperAdmin]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.roles.filter(nom_role=Role.SUPER_ADMIN).exists() or user.is_superuser:
+            qs = EmailWhitelist.objects.all()
+            dept = self.request.query_params.get('departement')
+            if dept:
+                qs = qs.filter(departement_id=dept)
+            return qs
+        # Chef de département → filtre par son département
+        if hasattr(user, 'departement_gere') and user.departement_gere:
+            return EmailWhitelist.objects.filter(departement=user.departement_gere)
+        return EmailWhitelist.objects.none()
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        kwargs = {'ajoute_par': user}
+        # Si chef, forcer le département au sien
+        if not (user.roles.filter(nom_role=Role.SUPER_ADMIN).exists() or user.is_superuser):
+            if hasattr(user, 'departement_gere') and user.departement_gere:
+                kwargs['departement'] = user.departement_gere
+        serializer.save(**kwargs)
+
+    @action(detail=False, methods=['post'], url_path='bulk')
+    def bulk_create(self, request):
+        emails = request.data.get('emails', [])
+        role_type = request.data.get('role_type')
+        departement_id = request.data.get('departement')
+
+        if not emails or not role_type:
+            return Response(
+                {'detail': 'Les champs emails et role_type sont requis.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = request.user
+        # Déterminer le département
+        if user.roles.filter(nom_role=Role.SUPER_ADMIN).exists() or user.is_superuser:
+            if not departement_id:
+                return Response(
+                    {'detail': 'Le champ departement est requis pour un admin.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        else:
+            if hasattr(user, 'departement_gere') and user.departement_gere:
+                departement_id = user.departement_gere.id
+            else:
+                return Response(
+                    {'detail': "Vous n'êtes assigné à aucun département."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        created = []
+        skipped = []
+        for email in emails:
+            email = email.strip().lower()
+            if not email:
+                continue
+            if EmailWhitelist.objects.filter(email__iexact=email).exists():
+                skipped.append(email)
+                continue
+            entry = EmailWhitelist.objects.create(
+                email=email,
+                role_type=role_type,
+                departement_id=departement_id,
+                ajoute_par=user,
+            )
+            created.append(email)
+
+        return Response(
+            {'created': created, 'skipped': skipped},
+            status=status.HTTP_201_CREATED,
+        )
+
+
 class LoginRateThrottle(AnonRateThrottle):
     """Limite les tentatives de login a 5/minute"""
     scope = 'login'
@@ -262,3 +355,130 @@ class LoginRateThrottle(AnonRateThrottle):
 class MyTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
     throttle_classes = [LoginRateThrottle]
+
+
+class GoogleAuthView(APIView):
+    """
+    Endpoint unique pour l'authentification Google.
+    - POST { id_token } : login si l'utilisateur existe, sinon 404
+    - POST { id_token, roles_ids, niveau_represente } : inscription + login
+    """
+    permission_classes = [AllowAny]
+    throttle_classes = [LoginRateThrottle]
+
+    def _verify_firebase_token(self, token):
+        """Verifie le token Firebase et retourne les infos utilisateur."""
+        try:
+            decoded = firebase_auth.verify_id_token(token)
+            return decoded
+        except Exception:
+            return None
+
+    def _generate_tokens(self, user):
+        """Genere les tokens JWT pour un utilisateur."""
+        refresh = RefreshToken.for_user(user)
+        serializer = UtilisateurSerializer(user)
+        return {
+            'access': str(refresh.access_token),
+            'refresh': str(refresh),
+            'user': serializer.data,
+        }
+
+    def post(self, request):
+        token = request.data.get('id_token')
+        if not token:
+            return Response(
+                {'detail': "Le champ 'id_token' est requis."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        decoded = self._verify_firebase_token(token)
+        if not decoded:
+            return Response(
+                {'detail': 'Token Firebase invalide.'},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        email = decoded.get('email', '').lower()
+        firebase_name = decoded.get('name', '')
+        # Firebase stocke le nom complet dans 'name', on le split
+        name_parts = firebase_name.split(' ', 1) if firebase_name else ['', '']
+        first_name = name_parts[0]
+        last_name = name_parts[1] if len(name_parts) > 1 else ''
+
+        if not email:
+            return Response(
+                {'detail': "Impossible de recuperer l'email depuis le token Google."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Verifier si l'utilisateur existe
+        try:
+            user = Utilisateur.objects.get(email=email)
+            # Utilisateur existant -> login
+            data = self._generate_tokens(user)
+            return Response(data, status=status.HTTP_200_OK)
+        except Utilisateur.DoesNotExist:
+            pass
+
+        # Utilisateur n'existe pas
+        roles_ids = request.data.get('roles_ids')
+
+        if not roles_ids:
+            # Pas de donnees d'inscription -> indiquer que l'utilisateur n'existe pas
+            return Response(
+                {
+                    'status': 'user_not_found',
+                    'email': email,
+                    'first_name': first_name,
+                    'last_name': last_name,
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Inscription Google
+        niveau_represente = request.data.get('niveau_represente')
+
+        try:
+            roles = Role.objects.filter(id__in=roles_ids)
+            if not roles.exists():
+                return Response(
+                    {'detail': 'Roles invalides.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Validation: delegue doit avoir un niveau
+            is_delegue = roles.filter(nom_role=Role.DELEGUE).exists()
+            if is_delegue and not niveau_represente:
+                return Response(
+                    {'niveau_represente': 'Ce champ est obligatoire pour un delegue.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            user = Utilisateur(
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                statut=StatutCompte.EN_ATTENTE,
+                auth_provider=AuthProvider.GOOGLE,
+                niveau_represente_id=niveau_represente,
+            )
+            user.set_unusable_password()
+            user.save()
+            user.roles.set(roles)
+
+            # Auto-activation si l'email est dans la whitelist
+            entry = EmailWhitelist.objects.filter(email__iexact=user.email).first()
+            if entry:
+                user.statut = StatutCompte.ACTIF
+                user.save()
+
+            data = self._generate_tokens(user)
+            return Response(data, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            logger.error(f'Erreur inscription Google: {e}')
+            return Response(
+                {'detail': "Erreur lors de la creation du compte."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )

@@ -3,7 +3,7 @@ from django.urls import path, include
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
-from users.views import MyTokenObtainPairView
+from users.views import MyTokenObtainPairView, GoogleAuthView
 from rest_framework_simplejwt.views import TokenRefreshView
 from academic.views_configuration import (
     ConfigurationStatusView,
@@ -31,6 +31,7 @@ urlpatterns = [
 
     path('api/auth/token/', MyTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('api/auth/google/', GoogleAuthView.as_view(), name='google_auth'),
     
     path('api/dashboard/', include('dashboard.urls')),
     path('api/academic/', include('academic.urls')),

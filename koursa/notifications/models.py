@@ -8,6 +8,9 @@ class NotificationType(models.TextChoices):
     FICHE_REFUSEE = 'FICHE_REFUSEE', 'Fiche refusee'
     FICHE_RESOUMISE = 'FICHE_RESOUMISE', 'Fiche resoumise'
     COMPTE_APPROUVE = 'COMPTE_APPROUVE', 'Compte approuve'
+    ALERTE_CHEF = 'ALERTE_CHEF', 'Alerte du chef'
+    RAPPEL_ENSEIGNANT = 'RAPPEL_ENSEIGNANT', 'Rappel enseignant'
+    RAPPEL_AUTO = 'RAPPEL_AUTO', 'Rappel automatique'
 
 
 class Notification(models.Model):
