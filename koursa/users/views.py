@@ -14,6 +14,7 @@ from .models import Utilisateur, Role, StatutCompte, AuthProvider, EmailWhitelis
 from .permissions import IsHoD, IsSuperAdmin, IsHoDOrSuperAdmin, IsAdminOrIsSelf
 from datetime import timedelta
 from .serializers import UtilisateurSerializer, RoleSerializer, PasswordConfirmationSerializer, ChangePasswordSerializer, MyTokenObtainPairSerializer, EmailWhitelistSerializer
+from django.db.models.functions import Lower
 from teaching.models import UniteEnseignement
 from academic.models import Departement
 from notifications.services import create_and_send_notification
@@ -46,12 +47,18 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
                 ues_enseignees__niveaux__filiere__departement=departement
             ).values_list('id', flat=True)
             # Enseignants whitelistes dans ce departement (pas encore d'UEs assignees)
-            whitelisted_emails = EmailWhitelist.objects.filter(
-                departement=departement, role_type='ENSEIGNANT'
-            ).values_list('email', flat=True)
+            whitelisted_emails = list(
+                EmailWhitelist.objects.filter(
+                    departement=departement, role_type='ENSEIGNANT'
+                ).values_list('email', flat=True)
+            )
+            whitelisted_emails_lower = [e.lower() for e in whitelisted_emails]
             enseignants_whitelistes = Utilisateur.objects.filter(
                 roles__nom_role=Role.ENSEIGNANT,
-                email__in=whitelisted_emails
+            ).annotate(
+                email_lower=Lower('email')
+            ).filter(
+                email_lower__in=whitelisted_emails_lower
             ).values_list('id', flat=True)
             all_ids = set(list(delegues_ids) + list(enseignants_avec_ues) + list(enseignants_whitelistes)) | {user.id}
             return self.queryset.filter(id__in=list(all_ids))
