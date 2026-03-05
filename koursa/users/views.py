@@ -40,7 +40,11 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         if user.roles.filter(nom_role=Role.CHEF_DEPARTEMENT).exists() and user.departement_gere:
             departement = user.departement_gere
             delegues_ids = Utilisateur.objects.filter(niveau_represente__filiere__departement=departement).values_list('id', flat=True)
-            enseignants_ids = Utilisateur.objects.filter(roles__nom_role=Role.ENSEIGNANT).values_list('id', flat=True)
+            # Enseignants qui ont des UEs dans les niveaux du departement
+            enseignants_ids = Utilisateur.objects.filter(
+                roles__nom_role=Role.ENSEIGNANT,
+                ues_enseignees__niveaux__filiere__departement=departement
+            ).values_list('id', flat=True)
             return self.queryset.filter(id__in=list(set(list(delegues_ids) + list(enseignants_ids)) | {user.id}))
         
         

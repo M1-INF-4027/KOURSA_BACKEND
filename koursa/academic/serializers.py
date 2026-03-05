@@ -9,11 +9,16 @@ class FaculteSerializer(serializers.ModelSerializer):
 
 class DepartementSerializer(serializers.ModelSerializer):
     nom_faculte = serializers.CharField(source='faculte.nom_faculte', read_only=True)
-    nom_chef = serializers.CharField(source='chef_departement.__str__', read_only=True, default=None)
+    nom_chef = serializers.SerializerMethodField()
 
     class Meta:
         model = Departement
         fields = ['id', 'nom_departement', 'faculte', 'nom_faculte', 'chef_departement', 'nom_chef']
+
+    def get_nom_chef(self, obj):
+        if obj.chef_departement:
+            return obj.chef_departement.get_full_name() or obj.chef_departement.email
+        return None
 
 class FiliereSerializer(serializers.ModelSerializer):
     nom_departement = serializers.CharField(source='departement.nom_departement', read_only=True)
