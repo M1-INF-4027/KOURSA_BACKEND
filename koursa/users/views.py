@@ -41,11 +41,20 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
             departement = user.departement_gere
             delegues_ids = Utilisateur.objects.filter(niveau_represente__filiere__departement=departement).values_list('id', flat=True)
             # Enseignants qui ont des UEs dans les niveaux du departement
-            enseignants_ids = Utilisateur.objects.filter(
+            enseignants_avec_ues = Utilisateur.objects.filter(
                 roles__nom_role=Role.ENSEIGNANT,
                 ues_enseignees__niveaux__filiere__departement=departement
             ).values_list('id', flat=True)
-            return self.queryset.filter(id__in=list(set(list(delegues_ids) + list(enseignants_ids)) | {user.id}))
+            # Enseignants whitelistes dans ce departement (pas encore d'UEs assignees)
+            whitelisted_emails = EmailWhitelist.objects.filter(
+                departement=departement, role_type='ENSEIGNANT'
+            ).values_list('email', flat=True)
+            enseignants_whitelistes = Utilisateur.objects.filter(
+                roles__nom_role=Role.ENSEIGNANT,
+                email__in=whitelisted_emails
+            ).values_list('id', flat=True)
+            all_ids = set(list(delegues_ids) + list(enseignants_avec_ues) + list(enseignants_whitelistes)) | {user.id}
+            return self.queryset.filter(id__in=list(all_ids))
         
         
         return self.queryset.filter(pk=user.pk)
