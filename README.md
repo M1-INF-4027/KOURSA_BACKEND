@@ -244,14 +244,35 @@ curl -X GET https://koursa.duckdns.org/api/users/utilisateurs/ \
   - `niveau_represente` : ForeignKey vers Niveau (pour les delegues)
   - `fcm_token` : Token Firebase pour notifications push
 
+**EmailWhitelist** (`users/models/whitelist.py`)
+- `email` : Email autorise (unique)
+- `role_type` : Type de role (`ENSEIGNANT`, `DELEGUE`)
+- `departement` : ForeignKey vers Departement
+- `ajoute_par` : ForeignKey vers Utilisateur
+
 #### Systeme d'inscription et approbation
 
 - **Tous les comptes** crees par inscription (web ou mobile) demarrent avec le statut `EN_ATTENTE`
 - **Comptes crees par un Super Admin** : statut `ACTIF` directement (pas besoin d'approbation)
+- **Whitelist** : si l'email est pre-enregistre dans la whitelist, le compte est automatiquement active (`ACTIF`) a l'inscription
 - **Approbation** : le Super Admin peut approuver tout role, le Chef de Departement ne peut approuver que les delegues et enseignants
 - **Delegues** : `niveau_represente` obligatoire a l'inscription
 - **Enseignants** : inscription via le formulaire web, approuves par le Chef de Departement ou le Super Admin
 - Un utilisateur peut avoir plusieurs roles (ex: Chef de Departement + Enseignant)
+- Un enseignant peut donner cours dans plusieurs departements (via les UEs ManyToMany)
+
+#### Authentification Google (Firebase)
+
+- L'app mobile supporte Google Sign-In via Firebase Authentication
+- Le flow : Google Sign-In natif → Firebase Auth → Firebase ID token → verification backend
+- Endpoint : `POST /api/auth/google/` avec `{ id_token }` (login) ou `{ id_token, roles_ids, niveau_represente }` (inscription)
+- Les comptes Google utilisent `auth_provider: 'google'` et n'ont pas de mot de passe
+
+#### Visibilite des utilisateurs par role
+
+- **Super Admin** : voit tous les utilisateurs
+- **Chef de Departement** : voit uniquement les delegues de son departement, les enseignants qui ont des UEs dans son departement, et les enseignants whitelistes dans son departement (meme sans UEs encore assignees)
+- **Enseignant / Delegue** : voit uniquement son propre profil
 
 #### Endpoints API
 
