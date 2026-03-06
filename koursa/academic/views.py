@@ -81,6 +81,13 @@ class NiveauViewSet(viewsets.ModelViewSet):
             permission_classes = [IsSuperAdmin]
         return [permission() for permission in permission_classes]
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        departement_id = self.request.query_params.get('departement')
+        if departement_id:
+            qs = qs.filter(filiere__departement_id=departement_id)
+        return qs
+
 
 class SalleViewSet(viewsets.ModelViewSet):
     queryset = Salle.objects.all()

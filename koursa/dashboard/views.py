@@ -631,6 +631,70 @@ class ExportHeuresView(APIView):
         return excel_response(wb, filename)
 
 
+class ExportMonRapportView(APIView):
+    """Export personnel pour l'enseignant connecte - ses fiches validees"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        if not user.roles.filter(nom_role__in=[Role.ENSEIGNANT, Role.CHEF_DEPARTEMENT]).exists():
+            return Response(
+                {"detail": "Acces reserve aux enseignants."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        date_debut, date_fin, error = parse_dates(request)
+        if error:
+            return error
+
+        filiere_id, niveau_id, semestre = parse_filters(request)
+        annee_academique_id = request.query_params.get('annee_academique')
+
+        # Fiches validees de cet enseignant uniquement
+        qs = FicheSuivi.objects.filter(
+            enseignant=user,
+            statut=StatutFiche.VALIDEE,
+        ).select_related('ue', 'enseignant').distinct()
+
+        if annee_academique_id:
+            qs = qs.filter(semestre__annee_academique_id=annee_academique_id)
+        if filiere_id:
+            qs = qs.filter(ue__niveaux__filiere_id=filiere_id)
+        if niveau_id:
+            qs = qs.filter(ue__niveaux__id=niveau_id)
+        if semestre:
+            qs = qs.filter(ue__semestre=semestre)
+        if date_debut:
+            qs = qs.filter(date_cours__gte=date_debut)
+        if date_fin:
+            qs = qs.filter(date_cours__lte=date_fin)
+
+        qs = qs.order_by('date_cours')
+
+        if not qs.exists():
+            return Response(
+                {"detail": "Aucune fiche validee trouvee."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        wb = Workbook()
+        ws = wb.active
+
+        nom_enseignant = f"{user.last_name} {user.first_name}".strip()
+        name_parts = ["MON_RAPPORT", nom_enseignant.replace(' ', '_')]
+        level_label = get_niveau_label(niveau_id, filiere_id, None)
+        if level_label:
+            name_parts.append(level_label)
+        if semestre:
+            name_parts.append(f"S{semestre}")
+
+        sheet_title = f"Rapport {nom_enseignant}"
+        write_bilan_sheet(ws, qs, title=sheet_title[:31])
+
+        filename = '_'.join(name_parts) + '.xlsx'
+        return excel_response(wb, filename)
+
+
 class AdminOverviewView(APIView):
     """Vue d'ensemble pour le super admin : stats par departement"""
     permission_classes = [IsAuthenticated, IsSuperAdmin]

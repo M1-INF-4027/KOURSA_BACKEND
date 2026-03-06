@@ -391,7 +391,17 @@ class GoogleAuthView(APIView):
         try:
             decoded = firebase_auth.verify_id_token(token)
             return decoded
-        except Exception:
+        except firebase_auth.ExpiredIdTokenError:
+            logger.warning('Firebase ID token expire')
+            return None
+        except firebase_auth.RevokedIdTokenError:
+            logger.warning('Firebase ID token revoque')
+            return None
+        except firebase_auth.InvalidIdTokenError:
+            logger.warning('Firebase ID token invalide')
+            return None
+        except Exception as e:
+            logger.error(f'Erreur verification Firebase token: {e}')
             return None
 
     def _generate_tokens(self, user):
