@@ -5,13 +5,21 @@ Backend API REST pour la plateforme **Koursa** - Systeme de gestion academique e
 ## Fonctionnalites principales
 
 - Authentification JWT (access + refresh tokens) avec email comme identifiant
+- Authentification Google Sign-In via Firebase
 - Gestion des utilisateurs avec systeme d'inscription et approbation multi-niveaux
 - Structure academique hierarchique : Faculte → Departement → Filiere → Niveau
 - Gestion des Unites d'Enseignement (UE) avec affectation enseignants et niveaux
+- Code UE automatiquement converti en majuscule (backend + frontend)
 - Fiches de suivi pedagogique avec workflow de validation (SOUMISE → VALIDEE / REFUSEE)
+- Validation directe des fiches par l'enseignant (sans mot de passe)
+- Creation de fiches par le chef de departement sans restriction de date
+- Restriction de date a 3 jours dans le passe pour les delegues
+- Systeme de planning automatique (retient le jour/heure habituel d'un cours)
+- Rappels automatiques escalatifs (3 niveaux) pour les fiches manquantes
+- Changement de niveau/filiere par les delegues lors d'une nouvelle annee academique
 - Dashboard statistique avec filtrage par filiere, niveau et semestre
 - Export Excel (bilan global, par UE, par enseignant) avec openpyxl
-- Notifications push via Firebase Cloud Messaging (FCM)
+- Notifications push via Firebase Cloud Messaging (FCM) avec vibration
 - Documentation API interactive (Swagger / ReDoc)
 - Interface d'administration personnalisee (Jazzmin)
 - Support multi-roles (un utilisateur peut avoir plusieurs roles)
@@ -288,6 +296,8 @@ curl -X GET https://koursa.duckdns.org/api/users/utilisateurs/ \
 | POST | `/api/users/utilisateurs/{id}/approuver-delegue/` | Alias pour compatibilite mobile |
 | POST | `/api/users/utilisateurs/confirm-password/` | Confirmer le mot de passe |
 | POST | `/api/users/utilisateurs/register-fcm-token/` | Enregistrer un token FCM |
+| POST | `/api/users/utilisateurs/changer-niveau/` | Changer de niveau/filiere (delegue) |
+| GET | `/api/users/utilisateurs/mes-utilisateurs/` | Utilisateurs du delegue (chef, enseignants, co-delegues) |
 | GET | `/api/users/roles/` | Liste des roles |
 
 ---
@@ -340,7 +350,7 @@ Faculte
 #### Modeles
 
 **UniteEnseignement** (`teaching/models/unite_enseignement.py`)
-- `code_ue` : Code de l'UE (unique)
+- `code_ue` : Code de l'UE (automatiquement en majuscule)
 - `libelle_ue` : Libelle de l'UE
 - `semestre` : Numero du semestre
 - `enseignants` : ManyToMany vers Utilisateur
@@ -350,7 +360,7 @@ Faculte
 - `ue` : ForeignKey vers UniteEnseignement
 - `delegue` : ForeignKey vers Utilisateur (qui soumet)
 - `enseignant` : ForeignKey vers Utilisateur (qui valide)
-- `date_cours` : Date du cours
+- `date_cours` : Date du cours (max 3 jours dans le passe pour les delegues, sans restriction pour le chef)
 - `heure_debut` / `heure_fin` : Horaires
 - `duree` : Calculee automatiquement
 - `salle` : Salle de cours
@@ -359,6 +369,15 @@ Faculte
 - `contenu_aborde` : Contenu detaille
 - `statut` : Statut de validation (`SOUMISE`, `VALIDEE`, `REFUSEE`)
 - `motif_refus` : Motif en cas de refus
+
+**PlanningCours** (`teaching/models/planning_cours.py`)
+- `ue` : ForeignKey vers UniteEnseignement
+- `semestre` : ForeignKey vers Semestre
+- `jour_semaine` : Jour de la semaine (0=Lundi ... 6=Dimanche)
+- `heure_debut` / `heure_fin` : Horaire habituel du cours
+- `type_seance` : Type de seance
+- `est_actif` : Si le planning est actif
+- Cree automatiquement lors de la premiere soumission d'une fiche
 
 L'API retourne aussi les champs calcules suivants :
 - `classe` : Label lisible de la classe (ex: "Informatique M1")
@@ -373,10 +392,11 @@ L'API retourne aussi les champs calcules suivants :
 | GET/PUT/PATCH/DELETE | `/api/teaching/unites-enseignement/{id}/` | CRUD UE |
 | GET/POST | `/api/teaching/fiches-suivi/` | Liste/Creation fiches |
 | GET/PUT/PATCH/DELETE | `/api/teaching/fiches-suivi/{id}/` | CRUD fiche |
-| POST | `/api/teaching/fiches-suivi/{id}/valider/` | Valider une fiche |
+| POST | `/api/teaching/fiches-suivi/{id}/valider/` | Valider une fiche (sans mot de passe) |
 | POST | `/api/teaching/fiches-suivi/{id}/refuser/` | Refuser une fiche |
 | POST | `/api/teaching/fiches-suivi/{id}/resoumettre/` | Resoumettre une fiche refusee |
 | GET | `/api/teaching/fiches-suivi/en-attente/` | Fiches en attente |
+| GET | `/api/teaching/unites-enseignement/mes-delegues/` | Delegues par matiere (enseignant) |
 
 ---
 
@@ -421,6 +441,43 @@ Le systeme utilise **Firebase Cloud Messaging (FCM)** pour envoyer des notificat
 - Les utilisateurs enregistrent leur token FCM via `/api/users/utilisateurs/register-fcm-token/`
 - Le champ `fcm_token` est stocke sur le modele `Utilisateur`
 - Le SDK `firebase_admin` (v7.1.0) est utilise cote serveur pour envoyer les notifications
+
+### Types de notifications
+
+| Type | Description |
+|------|-------------|
+| `FICHE_SOUMISE` | Nouvelle fiche soumise (vers enseignant) |
+| `FICHE_VALIDEE` | Fiche validee (vers delegue) |
+| `FICHE_REFUSEE` | Fiche refusee (vers delegue) |
+| `FICHE_RESOUMISE` | Fiche resoumise (vers enseignant) |
+| `COMPTE_APPROUVE` | Compte utilisateur approuve |
+| `ALERTE_CHEF` | Alerte du chef de departement |
+| `RAPPEL_ENSEIGNANT` | Rappel enseignant |
+| `RAPPEL_AUTO` | Rappel hebdomadaire automatique |
+| `RAPPEL_FICHE` | Rappel escalatif fiche manquante (3 niveaux) |
+
+---
+
+## Taches planifiees (Cron)
+
+### Rappels escalatifs fiche manquante
+```bash
+# Tous les jours a 18h
+0 18 * * * cd /var/www/koursa-backend/KOURSA_BACKEND/koursa && /var/www/koursa-backend/KOURSA_BACKEND/koursa/venv/bin/python manage.py send_fiche_reminders
+```
+
+Basee sur le modele `PlanningCours`, cette commande envoie 3 niveaux de rappel aux delegues :
+- **Jour J** (jour habituel du cours) : "Vous n'avez pas soumis la fiche de INF111"
+- **Jour J+1** : "Rappel : fiche toujours manquante"
+- **Jour J+2** : "Dernier delai ! Contactez le chef de departement" + email
+
+### Rappels hebdomadaires
+```bash
+# Vendredi a 18h
+0 18 * * 5 cd /var/www/koursa-backend/KOURSA_BACKEND/koursa && /var/www/koursa-backend/KOURSA_BACKEND/koursa/venv/bin/python manage.py send_weekly_reminders
+```
+
+Envoie un rappel global aux enseignants et delegues pour les UEs sans fiche soumise dans la semaine.
 
 ---
 
