@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
 from django.db.models import Q
 from users.models import Role
-from users.permissions import IsEnseignantConcerne, IsFicheModifiable, IsDelegueAuteur, IsDelegue
+from users.permissions import IsEnseignantConcerne, IsFicheModifiable, IsDelegueAuteur, IsDelegue, IsHoD
 from .models import UniteEnseignement, FicheSuivi, StatutFiche
 from .serializers import (
     UniteEnseignementSerializer,
@@ -132,7 +132,8 @@ class FicheSuiviViewSet(viewsets.ModelViewSet):
         permission_classes = [IsAuthenticated]
 
         if self.action == 'create':
-            permission_classes.append(IsDelegue)
+            # Delegues et chefs de departement peuvent creer des fiches
+            pass  # IsAuthenticated suffit, on verifie le role dans perform_create
 
         elif self.action in ['update', 'partial_update']:
             permission_classes.extend([IsDelegueAuteur, IsFicheModifiable])
@@ -189,13 +190,37 @@ class FicheSuiviViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         from academic.models import Semestre
-        from rest_framework.exceptions import ValidationError
+        from rest_framework.exceptions import ValidationError, PermissionDenied
+
+        user = self.request.user
+        is_delegue = user.roles.filter(nom_role=Role.DELEGUE).exists()
+        is_chef = user.roles.filter(nom_role=Role.CHEF_DEPARTEMENT).exists()
+        is_admin = user.roles.filter(nom_role=Role.SUPER_ADMIN).exists() or user.is_superuser
+
+        if not (is_delegue or is_chef or is_admin):
+            raise PermissionDenied("Seuls les delegues et chefs de departement peuvent creer des fiches.")
+
         semestre_actif = Semestre.objects.filter(est_actif=True).first()
         if not semestre_actif:
             raise ValidationError(
                 {"detail": "Aucun semestre actif. Veuillez contacter l'administrateur."}
             )
-        serializer.save(delegue=self.request.user, semestre=semestre_actif)
+
+        if is_chef or is_admin:
+            # Le chef/admin specifie le delegue dans la requete
+            delegue_id = self.request.data.get('delegue')
+            if delegue_id:
+                from users.models import Utilisateur
+                try:
+                    delegue = Utilisateur.objects.get(id=delegue_id)
+                except Utilisateur.DoesNotExist:
+                    raise ValidationError({"delegue": "Delegue introuvable."})
+                serializer.save(delegue=delegue, semestre=semestre_actif)
+            else:
+                # Si pas de delegue specifie, on met le chef comme createur
+                serializer.save(delegue=user, semestre=semestre_actif)
+        else:
+            serializer.save(delegue=user, semestre=semestre_actif)
 
     @action(detail=True, methods=['post'], url_path='valider')
     def valider(self, request, pk=None):

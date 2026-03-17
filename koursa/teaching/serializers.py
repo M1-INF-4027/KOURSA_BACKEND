@@ -99,7 +99,7 @@ class FicheSuiviSerializer(serializers.ModelSerializer):
             'titre_chapitre', 'contenu_aborde', 'statut', 'motif_refus',
             'date_soumission', 'date_validation'
         ]
-        read_only_fields = ['duree', 'statut', 'date_soumission', 'date_validation', 'delegue', 'semestre']
+        read_only_fields = ['duree', 'statut', 'date_soumission', 'date_validation', 'semestre']
 
     def get_semestre_info(self, obj):
         if obj.semestre:
@@ -149,16 +149,27 @@ class FicheSuiviSerializer(serializers.ModelSerializer):
         # Vérifier que la date du cours est dans une plage raisonnable
         if date_cours:
             from datetime import timedelta
+            request = self.context.get('request')
+            is_chef = False
+            if request and request.user and request.user.is_authenticated:
+                from users.models import Role
+                is_chef = request.user.roles.filter(
+                    nom_role__in=[Role.CHEF_DEPARTEMENT, Role.SUPER_ADMIN]
+                ).exists() or request.user.is_superuser
+
             max_date = date.today() + timedelta(days=7)
-            min_date = date.today() - timedelta(days=30)
             if date_cours > max_date:
                 raise serializers.ValidationError({
                     'date_cours': "La date du cours ne peut pas être plus de 7 jours dans le futur."
                 })
-            if date_cours < min_date:
-                raise serializers.ValidationError({
-                    'date_cours': "La date du cours ne peut pas être plus de 30 jours dans le passe."
-                })
+
+            # Les chefs/admins n'ont pas de restriction de date dans le passe
+            if not is_chef:
+                min_date = date.today() - timedelta(days=3)
+                if date_cours < min_date:
+                    raise serializers.ValidationError({
+                        'date_cours': "La date du cours ne peut pas depasser 3 jours dans le passe. Contactez votre chef de departement pour creer cette fiche."
+                    })
 
         # Vérifier que l'enseignant est bien assigné à l'UE
         if ue and enseignant:

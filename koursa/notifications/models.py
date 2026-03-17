@@ -11,6 +11,7 @@ class NotificationType(models.TextChoices):
     ALERTE_CHEF = 'ALERTE_CHEF', 'Alerte du chef'
     RAPPEL_ENSEIGNANT = 'RAPPEL_ENSEIGNANT', 'Rappel enseignant'
     RAPPEL_AUTO = 'RAPPEL_AUTO', 'Rappel automatique'
+    RAPPEL_FICHE = 'RAPPEL_FICHE', 'Rappel fiche manquante'
 
 
 class Notification(models.Model):
