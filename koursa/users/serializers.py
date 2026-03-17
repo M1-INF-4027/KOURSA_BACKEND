@@ -29,15 +29,22 @@ class UtilisateurSerializer(serializers.ModelSerializer):
     )
 
     password = serializers.CharField(write_only=True, required=False)
+    nom_departement = serializers.SerializerMethodField()
 
     class Meta:
         model = Utilisateur
         fields = [
             'id', 'email', 'first_name', 'last_name', 'password',
             'statut', 'auth_provider', 'roles', 'roles_ids', 'niveau_represente', 'fcm_token',
-            'is_superuser', 'is_staff'
+            'is_superuser', 'is_staff', 'nom_departement'
         ]
         read_only_fields = ['statut', 'auth_provider', 'is_superuser', 'is_staff']
+
+    def get_nom_departement(self, obj):
+        dept = getattr(obj, 'departement_gere', None)
+        if dept:
+            return dept.nom_departement
+        return None
 
     def validate(self, attrs):
         # Password obligatoire uniquement a la creation
