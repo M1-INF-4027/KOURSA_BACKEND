@@ -1,8 +1,6 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework_simplejwt.tokens import UntypedToken
-from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
 from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
 from django.db.models import Q
@@ -12,8 +10,6 @@ from .models import UniteEnseignement, FicheSuivi, StatutFiche
 from .serializers import (
     UniteEnseignementSerializer,
     FicheSuiviSerializer,
-    ValidationTokenSerializer,
-    ValidationFicheSerializer
 )
 from notifications.services import create_and_send_notification
 from notifications.models import NotificationType
@@ -210,25 +206,6 @@ class FicheSuiviViewSet(viewsets.ModelViewSet):
             return Response(
                 {"detail": "Cette fiche ne peut plus être validée."},
                 status=status.HTTP_400_BAD_REQUEST
-            )
-
-        token_serializer = ValidationTokenSerializer(data=request.data)
-        if not token_serializer.is_valid():
-            return Response(token_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            untyped_token = UntypedToken(token_serializer.validated_data['validation_token'])
-
-            if int(untyped_token['user_id']) != request.user.id:
-                raise InvalidToken("Ce token ne vous appartient pas.")
-
-            if untyped_token.get('token_class') != 'validation':
-                raise InvalidToken("Ce n'est pas un token de validation.")
-
-        except (InvalidToken, TokenError, TypeError, KeyError) as e:
-            return Response(
-                {"detail": f"Token de validation invalide ou expiré. Veuillez reconfirmer votre mot de passe."},
-                status=status.HTTP_403_FORBIDDEN
             )
 
         fiche.statut = StatutFiche.VALIDEE

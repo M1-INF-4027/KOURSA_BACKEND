@@ -35,5 +35,9 @@ class UniteEnseignement(models.Model):
         ordering = ['code_ue']
         unique_together = ('code_ue', 'semestre_obj')
 
+    def save(self, *args, **kwargs):
+        self.code_ue = self.code_ue.upper()
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.code_ue} - {self.libelle_ue}"

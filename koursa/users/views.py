@@ -213,6 +213,42 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
 
         return Response({"detail": "Token enregistré avec succès."}, status=status.HTTP_200_OK)
 
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated], url_path='changer-niveau')
+    def changer_niveau(self, request):
+        """Permet a un delegue de changer son niveau/filiere lors d'une nouvelle annee academique."""
+        user = request.user
+        if not user.roles.filter(nom_role=Role.DELEGUE).exists():
+            return Response({"detail": "Reserve aux delegues."}, status=status.HTTP_403_FORBIDDEN)
+
+        from academic.models import Niveau, AnneeAcademique
+        annee_active = AnneeAcademique.objects.filter(est_active=True).first()
+        if not annee_active or not annee_active.est_configuree:
+            return Response(
+                {"detail": "Aucune annee academique active et configuree. Veuillez contacter l'administrateur."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        niveau_id = request.data.get('niveau_id')
+        if not niveau_id:
+            return Response({"detail": "Le champ 'niveau_id' est requis."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            niveau = Niveau.objects.select_related('filiere__departement').get(id=niveau_id)
+        except Niveau.DoesNotExist:
+            return Response({"detail": "Niveau introuvable."}, status=status.HTTP_404_NOT_FOUND)
+
+        user.niveau_represente = niveau
+        user.save()
+
+        return Response({
+            "detail": "Niveau mis a jour avec succes.",
+            "niveau": {
+                "id": niveau.id,
+                "nom_niveau": niveau.nom_niveau,
+                "filiere_nom": niveau.filiere.nom_filiere if niveau.filiere else None,
+            }
+        }, status=status.HTTP_200_OK)
+
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated], url_path='mes-utilisateurs')
     def mes_utilisateurs(self, request):
         """Retourne les utilisateurs pertinents pour un délégué: chef, enseignants (avec UEs), co-délégués."""

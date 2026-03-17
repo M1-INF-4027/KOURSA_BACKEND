@@ -51,6 +51,9 @@ class UniteEnseignementSerializer(serializers.ModelSerializer):
             }
         return None
 
+    def validate_code_ue(self, value):
+        return value.upper()
+
     def validate(self, attrs):
         # Auto-populate semestre from semestre_obj if not provided
         semestre_obj = attrs.get('semestre_obj')
