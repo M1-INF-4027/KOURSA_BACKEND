@@ -425,19 +425,22 @@ class GoogleAuthView(APIView):
     def _verify_firebase_token(self, token):
         """Verifie le token Firebase et retourne les infos utilisateur."""
         try:
-            decoded = firebase_auth.verify_id_token(token)
+            decoded = firebase_auth.verify_id_token(token, check_revoked=False)
             return decoded
-        except firebase_auth.ExpiredIdTokenError:
-            logger.warning('Firebase ID token expire')
+        except firebase_auth.ExpiredIdTokenError as e:
+            logger.warning(f'Firebase ID token expire: {e}')
             return None
-        except firebase_auth.RevokedIdTokenError:
-            logger.warning('Firebase ID token revoque')
+        except firebase_auth.RevokedIdTokenError as e:
+            logger.warning(f'Firebase ID token revoque: {e}')
             return None
-        except firebase_auth.InvalidIdTokenError:
-            logger.warning('Firebase ID token invalide')
+        except firebase_auth.InvalidIdTokenError as e:
+            logger.warning(f'Firebase ID token invalide: {e}')
+            return None
+        except firebase_auth.CertificateFetchError as e:
+            logger.error(f'Firebase impossible de recuperer les certificats Google: {e}')
             return None
         except Exception as e:
-            logger.error(f'Erreur verification Firebase token: {e}')
+            logger.error(f'Erreur verification Firebase token: {type(e).__name__}: {e}')
             return None
 
     def _generate_tokens(self, user):
@@ -460,6 +463,7 @@ class GoogleAuthView(APIView):
 
         decoded = self._verify_firebase_token(token)
         if not decoded:
+            logger.error(f'Token Firebase rejete. Token length={len(token)}, first_50={token[:50]}')
             return Response(
                 {'detail': 'Token Firebase invalide.'},
                 status=status.HTTP_401_UNAUTHORIZED,
