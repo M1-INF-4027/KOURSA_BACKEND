@@ -313,6 +313,78 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         })
 
 
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated], url_path='reset-database')
+    def reset_database(self, request):
+        """Vider completement la base de donnees. Reserve au Super Admin avec confirmation par mot de passe."""
+        user = request.user
+
+        # Verifier que l'utilisateur est Super Admin
+        if not (user.roles.filter(nom_role=Role.SUPER_ADMIN).exists() or user.is_superuser):
+            return Response(
+                {"detail": "Seul le Super Administrateur peut effectuer cette action."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Verifier le mot de passe
+        password = request.data.get('password')
+        if not password or not user.check_password(password):
+            return Response(
+                {"detail": "Mot de passe incorrect."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        from teaching.models import FicheSuivi, UniteEnseignement, PlanningCours
+        from academic.models import (
+            Semestre, AnneeAcademique, Niveau, Filiere, Departement, Faculte, Salle,
+            HistoriqueChefDepartement,
+        )
+        from notifications.models import Notification
+
+        # Ordre de suppression (respecter les FK)
+        deleted = {}
+        deleted['fiches'] = FicheSuivi.objects.all().delete()[0]
+        deleted['planning'] = PlanningCours.objects.all().delete()[0]
+        deleted['notifications'] = Notification.objects.all().delete()[0]
+        deleted['historique_chefs'] = HistoriqueChefDepartement.objects.all().delete()[0]
+
+        # Supprimer les relations M2M des UEs avant de supprimer
+        for ue in UniteEnseignement.objects.all():
+            ue.enseignants.clear()
+            ue.niveaux.clear()
+        deleted['ues'] = UniteEnseignement.objects.all().delete()[0]
+
+        deleted['whitelist'] = EmailWhitelist.objects.all().delete()[0]
+        deleted['semestres'] = Semestre.objects.all().delete()[0]
+        deleted['annees'] = AnneeAcademique.objects.all().delete()[0]
+
+        # Supprimer tous les utilisateurs SAUF l'admin actuel
+        deleted['utilisateurs'] = Utilisateur.objects.exclude(pk=user.pk).delete()[0]
+
+        # Niveaux -> Filieres -> Departements -> Facultes
+        deleted['niveaux'] = Niveau.objects.all().delete()[0]
+        deleted['filieres'] = Filiere.objects.all().delete()[0]
+
+        # Detacher le chef avant de supprimer les departements
+        Departement.objects.all().update(chef_departement=None)
+        deleted['departements'] = Departement.objects.all().delete()[0]
+        deleted['facultes'] = Faculte.objects.all().delete()[0]
+        deleted['salles'] = Salle.objects.all().delete()[0]
+
+        # Nettoyer les roles de l'admin (garder seulement Super Admin)
+        role_admin = Role.objects.filter(nom_role=Role.SUPER_ADMIN).first()
+        if role_admin:
+            user.roles.set([role_admin])
+        user.niveau_represente = None
+        user.save()
+
+        logger.warning("BASE DE DONNEES VIDEE par %s (id=%s)", user.email, user.id)
+
+        return Response({
+            "detail": "Base de donnees videe avec succes.",
+            "supprime": deleted,
+        }, status=status.HTTP_200_OK)
+
+
 class RoleViewSet(viewsets.ModelViewSet):
     queryset = Role.objects.all()
     serializer_class = RoleSerializer

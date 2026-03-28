@@ -179,21 +179,3 @@ class FicheSuiviSerializer(serializers.ModelSerializer):
                 })
 
         return attrs
-
-
-class ValidationTokenSerializer(serializers.Serializer):
-    """Serializer pour la validation par token JWT"""
-    validation_token = serializers.CharField()
-
-
-class ValidationFicheSerializer(serializers.Serializer):
-    """Serializer pour valider ou refuser une fiche"""
-    action = serializers.ChoiceField(choices=['valider', 'refuser'])
-    motif_refus = serializers.CharField(required=False, allow_blank=True)
-
-    def validate(self, attrs):
-        if attrs['action'] == 'refuser' and not attrs.get('motif_refus'):
-            raise serializers.ValidationError({
-                'motif_refus': 'Le motif de refus est obligatoire.'
-            })
-        return attrs

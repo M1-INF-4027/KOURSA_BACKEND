@@ -30,6 +30,17 @@ def send_notification(token, title, body):
                 title=title,
                 body=body,
             ),
+            android=messaging.AndroidConfig(
+                notification=messaging.AndroidNotification(
+                    channel_id='koursa_default',
+                    sound='default',
+                ),
+            ),
+            apns=messaging.APNSConfig(
+                payload=messaging.APNSPayload(
+                    aps=messaging.Aps(sound='default'),
+                ),
+            ),
             token=token,
         )
         response = messaging.send(message)
@@ -50,6 +61,17 @@ def send_notification_with_data(token, title, body, data=None):
             notification=messaging.Notification(
                 title=title,
                 body=body,
+            ),
+            android=messaging.AndroidConfig(
+                notification=messaging.AndroidNotification(
+                    channel_id='koursa_default',
+                    sound='default',
+                ),
+            ),
+            apns=messaging.APNSConfig(
+                payload=messaging.APNSPayload(
+                    aps=messaging.Aps(sound='default'),
+                ),
             ),
             data=data or {},
             token=token,

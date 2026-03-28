@@ -2,6 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from django.http import FileResponse
 from django.utils import timezone
 from django.db.models import Q
 from users.models import Role
@@ -317,6 +318,55 @@ class FicheSuiviViewSet(viewsets.ModelViewSet):
         fiches = self.get_queryset().filter(statut=StatutFiche.SOUMISE)
         serializer = self.get_serializer(fiches, many=True)
         return Response(serializer.data)
+
+    @action(detail=True, methods=['get'], url_path='export-pdf', permission_classes=[])
+    def export_pdf(self, request, pk=None):
+        """Telecharger la fiche de suivi en PDF.
+        Accepte le token JWT via header Authorization OU via query param ?token=
+        pour permettre le telechargement direct depuis le navigateur mobile.
+        """
+        from rest_framework_simplejwt.authentication import JWTAuthentication
+        from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+
+        # Authentification : header classique OU query param token
+        user = request.user
+        if not user or not user.is_authenticated:
+            token_str = request.query_params.get('token')
+            if token_str:
+                jwt_auth = JWTAuthentication()
+                try:
+                    validated_token = jwt_auth.get_validated_token(token_str)
+                    user = jwt_auth.get_user(validated_token)
+                except (InvalidToken, TokenError):
+                    return Response({"detail": "Token invalide."}, status=status.HTTP_401_UNAUTHORIZED)
+            else:
+                return Response({"detail": "Authentification requise."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        fiche = FicheSuivi.objects.select_related(
+            'ue', 'delegue', 'enseignant', 'salle', 'semestre__annee_academique',
+        ).prefetch_related('ue__niveaux__filiere__departement__faculte').get(pk=pk)
+
+        # Chef de departement et Super Admin peuvent telecharger quel que soit le statut
+        is_admin_or_chef = (
+            user.roles.filter(nom_role__in=[Role.SUPER_ADMIN, Role.CHEF_DEPARTEMENT]).exists()
+            or user.is_superuser
+        )
+
+        # Delegue et Enseignant ne peuvent telecharger que si la fiche est VALIDEE
+        if not is_admin_or_chef and fiche.statut != StatutFiche.VALIDEE:
+            return Response(
+                {"detail": "Seules les fiches validees peuvent etre telechargees."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        from .pdf_export import generate_fiche_pdf
+        pdf_buffer = generate_fiche_pdf(fiche)
+
+        code_ue = fiche.ue.code_ue if fiche.ue else "fiche"
+        date_str = fiche.date_cours.strftime("%Y-%m-%d") if fiche.date_cours else "sans-date"
+        filename = f"fiche_{code_ue}_{date_str}.pdf"
+
+        return FileResponse(pdf_buffer, as_attachment=True, filename=filename, content_type='application/pdf')
 
     @action(detail=False, methods=['post'], url_path='check-conflicts')
     def check_conflicts(self, request):

@@ -17,6 +17,8 @@ Backend API REST pour la plateforme **Koursa** - Systeme de gestion academique e
 | drf-yasg | 1.21.11 | Documentation Swagger/OpenAPI |
 | WhiteNoise | 6.11.0 | Gestion des fichiers statiques |
 | Gunicorn | 23.0.0 | Serveur WSGI (production) |
+| ReportLab | 4.4.0 | Generation de PDF |
+| openpyxl | 3.1.5 | Export/Import Excel |
 
 ## Structure du projet
 
@@ -27,10 +29,13 @@ koursa/
 │   ├── settings.py
 │   ├── urls.py
 │   ├── wsgi.py
-│   └── asgi.py
+│   ├── asgi.py
+│   └── firebase_config.py  # Configuration Firebase (FCM)
 ├── users/               # Application Utilisateurs
 ├── academic/            # Application Academique
 ├── teaching/            # Application Enseignement
+│   └── pdf_export.py    # Generation PDF des fiches de suivi
+├── notifications/       # Application Notifications (FCM + rappels)
 ├── dashboard/           # Application Dashboard
 ├── .env/                # Environnement virtuel Python
 ├── manage.py
@@ -121,11 +126,14 @@ curl -X GET http://localhost:8000/api/users/utilisateurs/ \
 | GET | `/api/users/utilisateurs/{id}/` | Detail d'un utilisateur |
 | PUT/PATCH | `/api/users/utilisateurs/{id}/` | Modifier un utilisateur |
 | DELETE | `/api/users/utilisateurs/{id}/` | Supprimer un utilisateur |
-| GET | `/api/users/roles/` | Liste des roles |
-| POST | `/api/users/roles/` | Creer un role |
-| GET | `/api/users/roles/{id}/` | Detail d'un role |
-| PUT/PATCH | `/api/users/roles/{id}/` | Modifier un role |
-| DELETE | `/api/users/roles/{id}/` | Supprimer un role |
+| GET | `/api/users/utilisateurs/me/` | Profil de l'utilisateur connecte |
+| POST | `/api/users/utilisateurs/{id}/approuver/` | Approuver un utilisateur |
+| POST | `/api/users/utilisateurs/changer-niveau/` | Changer le niveau du delegue |
+| POST | `/api/users/utilisateurs/register-fcm-token/` | Enregistrer le token FCM |
+| GET | `/api/users/utilisateurs/mes-utilisateurs/` | Utilisateurs lies au delegue |
+| GET/POST | `/api/users/roles/` | Liste/Creation des roles |
+| GET/POST | `/api/users/whitelist/` | Liste/Creation whitelist emails |
+| POST | `/api/users/whitelist/bulk/` | Import bulk d'emails en whitelist |
 
 ---
 
@@ -232,7 +240,11 @@ Faculte
 | GET/PUT/PATCH/DELETE | `/api/teaching/fiches-suivi/{id}/` | CRUD fiche |
 | POST | `/api/teaching/fiches-suivi/{id}/valider/` | Valider une fiche |
 | POST | `/api/teaching/fiches-suivi/{id}/refuser/` | Refuser une fiche |
+| POST | `/api/teaching/fiches-suivi/{id}/resoumettre/` | Resoumettre une fiche refusee |
+| GET | `/api/teaching/fiches-suivi/{id}/export-pdf/` | Telecharger la fiche en PDF |
 | GET | `/api/teaching/fiches-suivi/en-attente/` | Fiches en attente |
+| POST | `/api/teaching/fiches-suivi/check-conflicts/` | Detecter conflits de salle/enseignant |
+| GET | `/api/teaching/unites-enseignement/mes-delegues/` | Delegues par matiere (enseignant) |
 
 #### Filtres disponibles
 
@@ -247,7 +259,51 @@ Exemple: `/api/teaching/fiches-suivi/?statut=SOUMISE&ue=1`
 
 ---
 
-### 4. Dashboard
+### 4. Notifications (Notifications push)
+
+#### Fonctionnalites
+- Notifications push via Firebase Cloud Messaging (FCM)
+- Son par defaut sur Android (`channel_id: koursa_default`) et iOS (`sound: default`)
+- Types de notifications : `FICHE_SOUMISE`, `FICHE_VALIDEE`, `FICHE_REFUSEE`, `FICHE_RESOUMISE`, `ALERTE_CHEF`, `RAPPEL_ENSEIGNANT`, `RAPPEL_AUTO`, `COMPTE_APPROUVE`
+- Rappels automatiques escalatifs (3 niveaux) pour les fiches manquantes
+
+#### Endpoints API
+
+| Methode | Endpoint | Description |
+|---------|----------|-------------|
+| GET | `/api/notifications/` | Liste des notifications |
+| POST | `/api/notifications/{id}/mark-read/` | Marquer comme lue |
+| POST | `/api/notifications/mark-all-read/` | Tout marquer comme lu |
+| GET | `/api/notifications/unread-count/` | Nombre de non-lues |
+| POST | `/api/notifications/alert-enseignant/` | Alerter un enseignant |
+| POST | `/api/notifications/alert-delegue/` | Alerter un delegue |
+
+---
+
+### 5. Export PDF des fiches de suivi
+
+Les fiches de suivi validees peuvent etre telechargees en PDF au format officiel de l'universite.
+
+**Endpoint :** `GET /api/teaching/fiches-suivi/{id}/export-pdf/`
+
+Le PDF reproduit la fiche papier officielle :
+- En-tete bilingue (Republique du Cameroun / Republic of Cameroon)
+- Universite, Faculte, Departement (dynamiques)
+- Grille d'informations : Semestre, Date, UE, Horaires, Enseignant, Salle, Type de seance, Titre
+- Zone "Contenu" avec le contenu aborde
+- Signatures delegue et enseignant
+
+**Regles d'acces :**
+| Role | Condition |
+|------|-----------|
+| Delegue / Enseignant | Fiche VALIDEE uniquement |
+| Chef de Departement / Super Admin | Quel que soit le statut |
+
+**Authentification :** Header `Authorization: Bearer <token>` ou query param `?token=<jwt>` (pour ouverture navigateur mobile).
+
+---
+
+### 6. Dashboard
 
 #### Endpoints API
 
@@ -379,6 +435,9 @@ psycopg2-binary==2.9.11
 gunicorn==23.0.0
 whitenoise==6.11.0
 python-dotenv==1.2.1
+firebase_admin==7.1.0
+openpyxl==3.1.5
+reportlab==4.4.0
 ```
 
 ---
