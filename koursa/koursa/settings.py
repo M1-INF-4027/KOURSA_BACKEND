@@ -77,12 +77,7 @@ MIDDLEWARE = [
 ]
 
 # CORS Configuration
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
+CORS_ALLOWED_ORIGINS = []
 
 # Ajouter les origines depuis la variable d'environnement (production)
 CORS_ALLOWED_ORIGINS_ENV = os.environ.get('CORS_ALLOWED_ORIGINS', '')
@@ -91,9 +86,13 @@ if CORS_ALLOWED_ORIGINS_ENV:
         origin.strip() for origin in CORS_ALLOWED_ORIGINS_ENV.split(',') if origin.strip()
     ])
 
-# En developpement, autoriser les origines locales supplementaires
+# En developpement, autoriser les origines locales
 if DEBUG:
     CORS_ALLOWED_ORIGINS.extend([
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
         "http://localhost:8080",
         "http://127.0.0.1:8080",
         "http://localhost:19006",
@@ -163,10 +162,10 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60), 
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),   
-    "ROTATE_REFRESH_TOKENS": False,
-    "BLACKLIST_AFTER_ROTATION": False,
+    "ACCESS_TOKEN_LIFETIME": timedelta(days=7),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=30),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
     "UPDATE_LAST_LOGIN": False,
 
     "ALGORITHM": "HS256",
