@@ -7,16 +7,6 @@ class Salle(models.Model):
         unique=True,
         verbose_name="Nom de la salle"
     )
-    capacite = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        verbose_name="Capacite"
-    )
-    batiment = models.CharField(
-        max_length=100,
-        blank=True,
-        verbose_name="Batiment"
-    )
     est_active = models.BooleanField(
         default=True,
         verbose_name="Active"

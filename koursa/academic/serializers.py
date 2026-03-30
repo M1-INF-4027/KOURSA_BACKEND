@@ -40,7 +40,7 @@ class NiveauSerializer(serializers.ModelSerializer):
 class SalleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Salle
-        fields = ['id', 'nom_salle', 'capacite', 'batiment', 'est_active']
+        fields = ['id', 'nom_salle', 'est_active']
 
 
 class SemestreSerializer(serializers.ModelSerializer):

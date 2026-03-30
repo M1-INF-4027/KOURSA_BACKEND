@@ -50,9 +50,9 @@ class SemestreAdmin(admin.ModelAdmin):
 
 @admin.register(Salle)
 class SalleAdmin(admin.ModelAdmin):
-    list_display = ('nom_salle', 'batiment', 'capacite', 'est_active')
-    search_fields = ('nom_salle', 'batiment')
-    list_filter = ('est_active', 'batiment')
+    list_display = ('nom_salle', 'est_active')
+    search_fields = ('nom_salle',)
+    list_filter = ('est_active',)
 
 
 @admin.register(HistoriqueChefDepartement)
