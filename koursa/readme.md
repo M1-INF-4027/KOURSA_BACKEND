@@ -177,6 +177,10 @@ Faculte
 | GET/PUT/PATCH/DELETE | `/api/academic/filieres/{id}/` | CRUD filiere |
 | GET/POST | `/api/academic/niveaux/` | Liste/Creation niveaux |
 | GET/PUT/PATCH/DELETE | `/api/academic/niveaux/{id}/` | CRUD niveau |
+| GET/POST | `/api/academic/salles/` | Liste/Creation salles |
+| POST | `/api/academic/salles/import/` | Import salles depuis Excel |
+| GET/POST | `/api/academic/annees-academiques/` | Liste/Creation annees |
+| GET | `/api/academic/semestres/` | Liste des semestres |
 
 ---
 
@@ -403,41 +407,60 @@ En production, configurez `CORS_ALLOWED_ORIGINS` dans settings.py.
 
 ---
 
-## Deploiement (Render)
+## Tests
 
-Le projet est configure pour le deploiement sur Render avec :
-- Script de build : `build.sh`
-- Serveur : Gunicorn
-- Fichiers statiques : WhiteNoise
-- Base de donnees : PostgreSQL (via `DATABASE_URL`)
+Le projet dispose d'une suite de **55 tests d'integration** couvrant tous les workflows critiques.
 
-### Variables d'environnement requises
+### Lancer les tests
+
+```bash
+cd koursa
+python -m pytest
 ```
-SECRET_KEY=<cle-secrete-production>
-DEBUG=False
-DATABASE_URL=<url-postgresql>
-RENDER_EXTERNAL_HOSTNAME=<hostname-render>
-```
+
+### Couverture des tests
+
+| Module | Tests | Ce qui est teste |
+|--------|-------|-----------------|
+| Auth | 5 | Login, mauvais mdp, token refresh, endpoint protege |
+| Registration | 3 | Inscription, email duplique, auto-activation whitelist |
+| Permissions | 4 | Acces par role (admin, chef, enseignant, delegue) |
+| Whitelist | 3 | Import bulk, deduplication, permissions |
+| User Management | 2 | Endpoint /me, mise a jour statut |
+| Reset Database | 3 | Validation mdp, permissions |
+| Structure academique | 9 | CRUD facultes, departements, filieres, niveaux |
+| Salles | 6 | CRUD, import Excel, deduplication |
+| Annee academique | 2 | Liste, semestres |
+| UEs | 5 | CRUD, uppercase, unicite, visibilite par role |
+| Fiches de suivi | 13 | Workflow complet (creation, validation, refus, resoumission) |
+
+### Technologies de test
+
+| Technologie | Version | Description |
+|-------------|---------|-------------|
+| pytest | 9.0.2 | Framework de test |
+| pytest-django | 4.12.0 | Integration Django |
 
 ---
 
-## Dependances principales
+## Deploiement Production
+
+- **URL:** https://koursa.duckdns.org/api
+- **Serveur:** 84.247.183.206 (softengine VPS)
+- **SSL:** Let's Encrypt
+- **CI/CD:** GitHub Actions (deploy automatique sur push main)
+- **WSGI:** Gunicorn (3 workers, port 8002)
+- **Reverse Proxy:** Nginx (port 8082)
+- **Fichiers statiques:** WhiteNoise
+
+### Variables d'environnement requises
 
 ```
-Django==6.0
-djangorestframework==3.16.1
-djangorestframework-simplejwt==5.5.1
-django-filter==25.2
-django-cors-headers==4.3.1
-drf-yasg==1.21.11
-dj-database-url==3.0.1
-psycopg2-binary==2.9.11
-gunicorn==23.0.0
-whitenoise==6.11.0
-python-dotenv==1.2.1
-firebase_admin==7.1.0
-openpyxl==3.1.5
-reportlab==4.4.0
+SECRET_KEY=<cle-secrete-production>
+DEBUG=False
+DATABASE_URL=postgresql://koursa_user:xxx@localhost:5432/koursa_db
+ALLOWED_HOSTS=84.247.183.206,koursa.duckdns.org
+CORS_ALLOWED_ORIGINS=https://koursa.duckdns.org
 ```
 
 ---
