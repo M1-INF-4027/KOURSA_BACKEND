@@ -124,7 +124,7 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
 
 
 class FicheSuiviViewSet(viewsets.ModelViewSet):
-    queryset = FicheSuivi.objects.select_related('ue', 'delegue', 'enseignant', 'salle').prefetch_related('ue__niveaux__filiere').all()
+    queryset = FicheSuivi.objects.select_related('ue', 'delegue', 'enseignant', 'salle', 'semestre__annee_academique').prefetch_related('ue__niveaux__filiere').all()
     serializer_class = FicheSuiviSerializer
 
     filterset_fields = ['statut', 'date_cours', 'enseignant', 'delegue', 'ue']

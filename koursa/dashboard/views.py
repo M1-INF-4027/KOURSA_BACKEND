@@ -6,7 +6,8 @@ from users.permissions import IsHoDOrSuperAdmin, IsSuperAdmin
 from teaching.models import FicheSuivi, StatutFiche, UniteEnseignement
 from academic.models import Departement, Filiere, Niveau, Semestre
 from users.models import Utilisateur, Role
-from django.db.models import Sum, Count
+from django.db import models
+from django.db.models import Sum, Count, Q
 from datetime import datetime, timedelta, date
 from django.http import HttpResponse
 from openpyxl import Workbook
@@ -461,21 +462,22 @@ class ExportParUEView(APIView):
                 ws = wb.create_sheet(title=code_ue[:31])
                 write_bilan_sheet(ws, fiches_ue)
 
-            # Onglet recapitulatif
+            # Onglet recapitulatif - single aggregated query
             ws_recap = wb.create_sheet(title="Recapitulatif", index=0)
             recap_headers = ["UE", "Nb seances", "Total heures"]
             ws_recap.append(recap_headers)
             style_header_row(ws_recap, 1, len(recap_headers))
             total_h = 0
             total_s = 0
-            for code_ue, ue_id_val in ue_codes:
-                fiches_ue = fiches.filter(ue_id=ue_id_val)
-                nb = fiches_ue.count()
-                h = fiches_ue.aggregate(t=Sum('duree'))['t'] or timedelta(0)
+            recap_data = fiches.values('ue__code_ue').annotate(
+                nb=Count('id'), total_duree=Sum('duree')
+            ).order_by('ue__code_ue')
+            for item in recap_data:
+                h = item['total_duree'] or timedelta(0)
                 heures = round(h.total_seconds() / 3600, 2)
                 total_h += heures
-                total_s += nb
-                ws_recap.append([code_ue, nb, heures])
+                total_s += item['nb']
+                ws_recap.append([item['ue__code_ue'], item['nb'], heures])
                 for col in range(1, 4):
                     style_data_cell(ws_recap.cell(row=ws_recap.max_row, column=col))
             # Total
@@ -539,21 +541,25 @@ class ExportParEnseignantView(APIView):
                 ws = wb.create_sheet(title=nom[:31])
                 write_bilan_sheet(ws, fiches_ens)
 
-            # Onglet recapitulatif
+            # Onglet recapitulatif - single aggregated query
             ws_recap = wb.create_sheet(title="Recapitulatif", index=0)
             recap_headers = ["Enseignant", "Nb seances", "Total heures"]
             ws_recap.append(recap_headers)
             style_header_row(ws_recap, 1, len(recap_headers))
             total_h = 0
             total_s = 0
-            for ens_id, last, first in enseignants:
-                fiches_ens = fiches.filter(enseignant_id=ens_id)
-                nb = fiches_ens.count()
-                h = fiches_ens.aggregate(t=Sum('duree'))['t'] or timedelta(0)
+            recap_data = fiches.values(
+                'enseignant__last_name', 'enseignant__first_name'
+            ).annotate(
+                nb=Count('id'), total_duree=Sum('duree')
+            ).order_by('enseignant__last_name')
+            for item in recap_data:
+                h = item['total_duree'] or timedelta(0)
                 heures = round(h.total_seconds() / 3600, 2)
                 total_h += heures
-                total_s += nb
-                ws_recap.append([f"{last} {first}".strip(), nb, heures])
+                total_s += item['nb']
+                nom = f"{item['enseignant__last_name']} {item['enseignant__first_name']}".strip()
+                ws_recap.append([nom, item['nb'], heures])
                 for col in range(1, 4):
                     style_data_cell(ws_recap.cell(row=ws_recap.max_row, column=col))
             ws_recap.append(["TOTAL", total_s, round(total_h, 2)])
@@ -702,39 +708,42 @@ class AdminOverviewView(APIView):
     def get(self, request, *args, **kwargs):
         departements = Departement.objects.select_related('faculte', 'chef_departement').all()
 
+        # Single aggregated query instead of N+1
+        from django.db.models import Case, When, IntegerField
+        stats = FicheSuivi.objects.filter(
+            ue__niveaux__filiere__departement__isnull=False,
+        ).values(
+            'ue__niveaux__filiere__departement'
+        ).annotate(
+            total=Count('id', distinct=True),
+            soumises=Count('id', distinct=True, filter=models.Q(statut=StatutFiche.SOUMISE)),
+            validees=Count('id', distinct=True, filter=models.Q(statut=StatutFiche.VALIDEE)),
+            refusees=Count('id', distinct=True, filter=models.Q(statut=StatutFiche.REFUSEE)),
+        )
+        stats_map = {s['ue__niveaux__filiere__departement']: s for s in stats}
+
         result = []
         for dept in departements:
-            fiches = FicheSuivi.objects.filter(
-                ue__niveaux__filiere__departement=dept,
-            ).distinct()
-
-            total = fiches.count()
-            soumises = fiches.filter(statut=StatutFiche.SOUMISE).count()
-            validees = fiches.filter(statut=StatutFiche.VALIDEE).count()
-            refusees = fiches.filter(statut=StatutFiche.REFUSEE).count()
-
+            s = stats_map.get(dept.id, {})
             chef = dept.chef_departement
-            chef_nom = f"{chef.last_name} {chef.first_name}".strip() if chef else None
-
             result.append({
                 'id': dept.id,
                 'nom': dept.nom_departement,
                 'faculte': dept.faculte.nom_faculte if dept.faculte else None,
-                'chef': chef_nom,
-                'total': total,
-                'soumises': soumises,
-                'validees': validees,
-                'refusees': refusees,
+                'chef': f"{chef.last_name} {chef.first_name}".strip() if chef else None,
+                'total': s.get('total', 0),
+                'soumises': s.get('soumises', 0),
+                'validees': s.get('validees', 0),
+                'refusees': s.get('refusees', 0),
             })
 
-        # Totaux globaux
-        all_fiches = FicheSuivi.objects.all()
-        totaux = {
-            'total': all_fiches.count(),
-            'soumises': all_fiches.filter(statut=StatutFiche.SOUMISE).count(),
-            'validees': all_fiches.filter(statut=StatutFiche.VALIDEE).count(),
-            'refusees': all_fiches.filter(statut=StatutFiche.REFUSEE).count(),
-        }
+        # Totaux globaux - single query with conditional aggregation
+        totaux = FicheSuivi.objects.aggregate(
+            total=Count('id'),
+            soumises=Count('id', filter=models.Q(statut=StatutFiche.SOUMISE)),
+            validees=Count('id', filter=models.Q(statut=StatutFiche.VALIDEE)),
+            refusees=Count('id', filter=models.Q(statut=StatutFiche.REFUSEE)),
+        )
 
         return Response({
             'departements': result,

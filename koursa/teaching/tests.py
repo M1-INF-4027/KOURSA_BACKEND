@@ -54,14 +54,16 @@ class TestUE:
         c = auth_client(api, enseignant_user)
         res = c.get('/api/teaching/unites-enseignement/')
         assert res.status_code == status.HTTP_200_OK
-        codes = [u['code_ue'] for u in res.data]
+        results = res.data.get('results', res.data) if isinstance(res.data, dict) else res.data
+        codes = [u['code_ue'] for u in results]
         assert 'INF111' in codes
 
     def test_delegue_sees_own_niveau_ues(self, api, delegue_user, ue, annee_active):
         c = auth_client(api, delegue_user)
         res = c.get('/api/teaching/unites-enseignement/')
         assert res.status_code == status.HTTP_200_OK
-        codes = [u['code_ue'] for u in res.data]
+        results = res.data.get('results', res.data) if isinstance(res.data, dict) else res.data
+        codes = [u['code_ue'] for u in results]
         assert 'INF111' in codes
 
 

@@ -118,16 +118,18 @@ class FicheSuiviSerializer(serializers.ModelSerializer):
 
     def get_niveaux_details(self, obj):
         if obj.ue:
+            # Use prefetched data if available (from view's prefetch_related)
+            niveaux = obj.ue.niveaux.all()
             return [
-                {'nom_niveau': n.nom_niveau, 'filiere_nom': n.filiere.nom_filiere}
-                for n in obj.ue.niveaux.select_related('filiere').all()
+                {'nom_niveau': n.nom_niveau, 'filiere_nom': n.filiere.nom_filiere if n.filiere else None}
+                for n in niveaux
             ]
         return []
 
     def get_classe(self, obj):
         if obj.ue:
-            niveaux = obj.ue.niveaux.select_related('filiere').all()
-            labels = [f"{n.filiere.nom_filiere} {n.nom_niveau}" for n in niveaux]
+            niveaux = obj.ue.niveaux.all()
+            labels = [f"{n.filiere.nom_filiere} {n.nom_niveau}" for n in niveaux if n.filiere]
             return ', '.join(labels) if labels else None
         return None
 

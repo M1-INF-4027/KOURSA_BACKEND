@@ -74,6 +74,13 @@ class FicheSuivi(models.Model):
 
     class Meta:
         ordering = ['-date_cours', '-heure_debut']
+        indexes = [
+            models.Index(fields=['statut'], name='idx_fiche_statut'),
+            models.Index(fields=['date_cours'], name='idx_fiche_date'),
+            models.Index(fields=['statut', 'date_cours'], name='idx_fiche_statut_date'),
+            models.Index(fields=['enseignant', 'statut'], name='idx_fiche_enseignant_statut'),
+            models.Index(fields=['delegue', 'statut'], name='idx_fiche_delegue_statut'),
+        ]
 
     def __str__(self):
         return f"Fiche du {self.date_cours} pour {self.ue.code_ue}"
