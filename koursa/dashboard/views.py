@@ -8,6 +8,7 @@ from academic.models import Departement, Filiere, Niveau, Semestre
 from users.models import Utilisateur, Role
 from django.db import models
 from django.db.models import Sum, Count, Q
+from django.core.cache import cache
 from datetime import datetime, timedelta, date
 from django.http import HttpResponse
 from openpyxl import Workbook
@@ -706,6 +707,12 @@ class AdminOverviewView(APIView):
     permission_classes = [IsAuthenticated, IsSuperAdmin]
 
     def get(self, request, *args, **kwargs):
+        # Cache for 2 minutes - heavy query
+        cache_key = 'admin_overview_stats'
+        cached = cache.get(cache_key)
+        if cached:
+            return Response(cached)
+
         departements = Departement.objects.select_related('faculte', 'chef_departement').all()
 
         # Single aggregated query instead of N+1
@@ -745,10 +752,12 @@ class AdminOverviewView(APIView):
             refusees=Count('id', filter=models.Q(statut=StatutFiche.REFUSEE)),
         )
 
-        return Response({
+        response_data = {
             'departements': result,
             'totaux': totaux,
-        })
+        }
+        cache.set(cache_key, response_data, 120)  # 2 minutes
+        return Response(response_data)
 
 
 def get_monday(d=None):

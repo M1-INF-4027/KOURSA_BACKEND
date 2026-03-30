@@ -81,6 +81,7 @@ class Utilisateur(AbstractUser):
     class Meta:
         verbose_name = "Utilisateur"
         verbose_name_plural = "Utilisateurs"
+        ordering = ['last_name', 'first_name']
 
     def __str__(self):
         return self.get_full_name() or self.email

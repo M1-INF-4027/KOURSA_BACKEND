@@ -12,8 +12,14 @@ from .serializers import (
     UniteEnseignementSerializer,
     FicheSuiviSerializer,
 )
+from django.core.cache import cache
 from notifications.services import create_and_send_notification
 from notifications.models import NotificationType
+
+
+def invalidate_dashboard_cache():
+    """Invalidate dashboard caches when fiches change."""
+    cache.delete('admin_overview_stats')
 
 
 class UniteEnseignementViewSet(viewsets.ModelViewSet):
@@ -222,6 +228,7 @@ class FicheSuiviViewSet(viewsets.ModelViewSet):
                 serializer.save(delegue=user, semestre=semestre_actif)
         else:
             serializer.save(delegue=user, semestre=semestre_actif)
+        invalidate_dashboard_cache()
 
     @action(detail=True, methods=['post'], url_path='valider')
     def valider(self, request, pk=None):
@@ -248,6 +255,7 @@ class FicheSuiviViewSet(viewsets.ModelViewSet):
                 related_object_id=fiche.id,
             )
 
+        invalidate_dashboard_cache()
         return Response(self.get_serializer(fiche).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], url_path='refuser')
@@ -282,6 +290,7 @@ class FicheSuiviViewSet(viewsets.ModelViewSet):
                 related_object_id=fiche.id,
             )
 
+        invalidate_dashboard_cache()
         return Response(self.get_serializer(fiche).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], url_path='resoumettre')
