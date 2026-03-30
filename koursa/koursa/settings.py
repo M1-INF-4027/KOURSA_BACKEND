@@ -139,10 +139,11 @@ DATABASES = {
 }
 
 # Cache configuration
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379/1')
 CACHES = {
     'default': {
-        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-        'LOCATION': 'koursa-cache',
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': REDIS_URL,
         'TIMEOUT': 300,  # 5 minutes
     }
 }
