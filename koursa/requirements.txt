@@ -58,5 +58,6 @@ uritemplate==4.2.0
 urllib3==2.6.2
 whitenoise==6.11.0
 django-jazzmin==3.0.1
+redis==7.4.0
 pytest==9.0.2
 pytest-django==4.12.0
