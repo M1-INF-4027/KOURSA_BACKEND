@@ -76,6 +76,18 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
         return UniteEnseignement.objects.none()
 
 
+    @action(detail=False, methods=['delete'], url_path='delete-all')
+    def delete_all(self, request):
+        """Supprimer toutes les UEs. Reserve au Super Admin."""
+        from users.permissions import IsSuperAdmin
+        if not IsSuperAdmin().has_permission(request, self):
+            return Response({'detail': 'Acces refuse.'}, status=status.HTTP_403_FORBIDDEN)
+        count = UniteEnseignement.objects.count()
+        UniteEnseignement.objects.all().delete()
+        import logging
+        logging.getLogger('koursa').warning(f'Toutes les UEs supprimees ({count}) par {request.user.email}')
+        return Response({'deleted': count}, status=status.HTTP_200_OK)
+
     @action(detail=False, methods=['get'], url_path='mes-delegues')
     def mes_delegues(self, request):
         """Retourne les delegues actifs des classes de l'enseignant connecte"""

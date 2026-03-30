@@ -423,6 +423,15 @@ class EmailWhitelistViewSet(viewsets.ModelViewSet):
                 kwargs['departement'] = user.departement_gere
         serializer.save(**kwargs)
 
+    @action(detail=False, methods=['delete'], url_path='delete-all')
+    def delete_all(self, request):
+        """Supprimer tous les emails de la whitelist (scope par departement pour le chef)."""
+        qs = self.get_queryset()
+        count = qs.count()
+        qs.delete()
+        logger.warning(f'Whitelist videe ({count} emails) par {request.user.email}')
+        return Response({'deleted': count}, status=status.HTTP_200_OK)
+
     @action(detail=False, methods=['post'], url_path='bulk')
     def bulk_create(self, request):
         emails = request.data.get('emails', [])

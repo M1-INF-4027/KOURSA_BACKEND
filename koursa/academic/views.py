@@ -106,6 +106,14 @@ class SalleViewSet(viewsets.ModelViewSet):
             permission_classes = [IsSuperAdmin]
         return [permission() for permission in permission_classes]
 
+    @action(detail=False, methods=['delete'], url_path='delete-all')
+    def delete_all(self, request):
+        """Supprimer toutes les salles."""
+        count = Salle.objects.count()
+        Salle.objects.all().delete()
+        logger.warning(f'Toutes les salles supprimees ({count}) par {request.user.email}')
+        return Response({'deleted': count}, status=status.HTTP_200_OK)
+
     @action(detail=False, methods=['post'], url_path='import',
             parser_classes=[MultiPartParser, FormParser])
     def import_salles(self, request):
