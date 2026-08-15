@@ -30,7 +30,7 @@ Créez 4 secrets:
 
 | Secret | Valeur |
 |--------|--------|
-| VPS_HOST | 84.247.183.206 |
+| VPS_HOST | 84.247.172.198 |
 | VPS_USERNAME | softengine |
 | VPS_SSH_KEY | Contenu de `~/.ssh/koursa_deploy` |
 | VPS_PORT | 22 |
@@ -50,7 +50,7 @@ git push origin main
 Connectez-vous:
 
 ```bash
-ssh softengine@84.247.183.206
+ssh koursa@84.247.172.198
 ```
 
 ### Copier-coller ce script complet:
@@ -71,7 +71,7 @@ sudo apt install -y python3 python3-pip python3-venv postgresql postgresql-contr
 # 3. Configurer PostgreSQL
 sudo -u postgres psql << EOF
 CREATE DATABASE koursa_db;
-CREATE USER koursa_user WITH PASSWORD 'koursa2026';
+CREATE USER koursa_user WITH PASSWORD '<MOT_DE_PASSE_BD>';
 ALTER ROLE koursa_user SET client_encoding TO 'utf8';
 ALTER ROLE koursa_user SET default_transaction_isolation TO 'read committed';
 ALTER ROLE koursa_user SET timezone TO 'UTC';
@@ -93,8 +93,8 @@ pip install -r koursa/requirements.txt
 cat > /var/www/koursa-backend/koursa/.env << 'EOF'
 SECRET_KEY=$(python3 -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")
 DEBUG=False
-DATABASE_URL=postgresql://koursa_user:koursa2026@localhost:5432/koursa_db
-ALLOWED_HOSTS=84.247.183.206
+DATABASE_URL=postgresql://koursa_user:<MOT_DE_PASSE_BD>@localhost:5432/koursa_db
+ALLOWED_HOSTS=84.247.172.198
 EOF
 
 # 7. Migrations et static
@@ -135,7 +135,7 @@ sudo usermod -a -G www-data softengine
 sudo chmod 755 /home/softengine
 
 echo "✅ Installation terminée!"
-echo "🌐 Votre API est disponible sur: http://84.247.183.206:8080"
+echo "🌐 Votre API est disponible sur: http://84.247.172.198:8080"
 ```
 
 **IMPORTANT**:
@@ -153,7 +153,7 @@ Si le script ne fonctionne pas, suivez **INSTRUCTIONS_VPS.md** étape par étape
 ### A. Tester l'API
 
 ```bash
-curl http://84.247.183.206:8080/
+curl http://84.247.172.198:8080/
 ```
 
 ### B. Tester le CI/CD
@@ -173,7 +173,7 @@ Allez sur: **GitHub → Actions** pour voir le déploiement.
 ### C. Accès à l'admin
 
 ```
-http://84.247.183.206:8080/admin/
+http://84.247.172.198:8080/admin/
 ```
 
 ---

@@ -445,8 +445,8 @@ python -m pytest
 
 ## Deploiement Production
 
-- **URL:** https://koursa.duckdns.org/api
-- **Serveur:** 84.247.183.206 (softengine VPS)
+- **URL:** https://koursa.arited.org/api
+- **Serveur:** 84.247.172.198 (softengine VPS)
 - **SSL:** Let's Encrypt
 - **CI/CD:** GitHub Actions (deploy automatique sur push main)
 - **WSGI:** Gunicorn (3 workers, port 8002)
@@ -459,8 +459,8 @@ python -m pytest
 SECRET_KEY=<cle-secrete-production>
 DEBUG=False
 DATABASE_URL=postgresql://koursa_user:xxx@localhost:5432/koursa_db
-ALLOWED_HOSTS=84.247.183.206,koursa.duckdns.org
-CORS_ALLOWED_ORIGINS=https://koursa.duckdns.org
+ALLOWED_HOSTS=84.247.172.198,koursa.arited.org
+CORS_ALLOWED_ORIGINS=https://koursa.arited.org
 ```
 
 ---

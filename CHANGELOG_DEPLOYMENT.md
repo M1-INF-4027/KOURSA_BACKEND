@@ -6,7 +6,7 @@
 
 #### 1. Mot de passe de la base de données
 - **Ancien:** `Koursa2026@Secure!` (dans certains fichiers)
-- **Nouveau:** `koursa2026` (standardisé partout)
+- **Nouveau:** `<MOT_DE_PASSE_BD>` (standardisé partout)
 - **Fichiers mis à jour:**
   - `INSTRUCTIONS_VPS.md`
   - `QUICKSTART.md`
@@ -39,7 +39,7 @@ Tous les chemins ont été adaptés à la structure réelle sur le serveur:
 Ajout de `CSRF_TRUSTED_ORIGINS` dans `settings.py`:
 ```python
 CSRF_TRUSTED_ORIGINS = [
-    'http://84.247.183.206:8082',
+    'http://84.247.172.198:8082',
     'http://127.0.0.1:8082',
     'http://localhost:8082',
 ]
@@ -58,14 +58,14 @@ CSRF_TRUSTED_ORIGINS = [
 ```
 Base: koursa_db
 Utilisateur: koursa_user
-Mot de passe: koursa2026
+Mot de passe: <MOT_DE_PASSE_BD>
 Host: localhost
 Port: 5432
 ```
 
 #### Serveur VPS
 ```
-IP: 84.247.183.206
+IP: 84.247.172.198
 Utilisateur: softengine
 Port SSH: 22
 ```
@@ -79,10 +79,10 @@ Port Nginx: 8082 (0.0.0.0)
 
 #### URLs d'accès
 ```
-API: http://84.247.183.206:8082
-Admin: http://84.247.183.206:8082/admin/
-Swagger: http://84.247.183.206:8082/swagger/
-ReDoc: http://84.247.183.206:8082/redoc/
+API: http://84.247.172.198:8082
+Admin: http://84.247.172.198:8082/admin/
+Swagger: http://84.247.172.198:8082/swagger/
+ReDoc: http://84.247.172.198:8082/redoc/
 ```
 
 ### 🚀 Workflow de déploiement
@@ -93,13 +93,13 @@ git push origin main
   ↓
 GitHub Actions
   ↓
-SSH vers VPS (84.247.183.206)
+SSH vers VPS (84.247.172.198)
   ↓
 git pull + pip install + migrations + collectstatic
   ↓
 systemctl restart koursa-backend
   ↓
-API disponible sur http://84.247.183.206:8082
+API disponible sur http://84.247.172.198:8082
 ```
 
 #### Manuel
@@ -157,27 +157,27 @@ sudo tail -f /var/log/nginx/koursa-backend-error.log
 
 # Tester l'API
 curl http://127.0.0.1:8082/
-curl http://84.247.183.206:8082/admin/
+curl http://84.247.172.198:8082/admin/
 ```
 
 ### 📌 Prochaines étapes
 
 1. **Configurer les secrets GitHub:**
-   - VPS_HOST: 84.247.183.206
+   - VPS_HOST: 84.247.172.198
    - VPS_USERNAME: softengine
    - VPS_SSH_KEY: (clé privée)
    - VPS_PORT: 22
 
 2. **Tester le déploiement manuel:**
    ```bash
-   ssh softengine@84.247.183.206
+   ssh koursa@84.247.172.198
    cd /var/www/koursa-backend
    git pull origin main
    sudo systemctl restart koursa-backend
    ```
 
 3. **Tester l'accès à l'API:**
-   - Ouvrir http://84.247.183.206:8082/admin/
+   - Ouvrir http://84.247.172.198:8082/admin/
    - Se connecter avec un compte admin
    - Vérifier que le CSRF fonctionne
 
@@ -189,7 +189,7 @@ curl http://84.247.183.206:8082/admin/
 ### 🎯 Configuration terminée
 
 Tous les fichiers sont maintenant à jour avec:
-- ✅ Le bon mot de passe de base de données (koursa2026)
+- ✅ Le bon mot de passe de base de données (<MOT_DE_PASSE_BD>)
 - ✅ Les bons ports (8082/8002)
 - ✅ Les bons chemins d'accès
 - ✅ La configuration CSRF

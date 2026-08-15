@@ -24,7 +24,7 @@ J'ai configuré tout le nécessaire pour le déploiement automatique de votre ba
 
 1. Générer une paire de clés SSH pour GitHub Actions
 2. Ajouter 4 secrets dans votre repository GitHub:
-   - `VPS_HOST`: 84.247.183.206
+   - `VPS_HOST`: 84.247.172.198
    - `VPS_USERNAME`: softengine
    - `VPS_SSH_KEY`: (votre clé privée SSH)
    - `VPS_PORT`: 22
@@ -39,7 +39,7 @@ git push origin main
 
 ### Étape 3: Configuration du serveur VPS (30 minutes)
 
-1. Connectez-vous à votre VPS: `ssh softengine@84.247.183.206`
+1. Connectez-vous à votre VPS: `ssh koursa@84.247.172.198`
 2. Suivez les instructions détaillées dans **`INSTRUCTIONS_VPS.md`**
 
 Le fichier **INSTRUCTIONS_VPS.md** contient toutes les commandes à copier-coller étape par étape.
@@ -49,9 +49,9 @@ Le fichier **INSTRUCTIONS_VPS.md** contient toutes les commandes à copier-colle
 Une fois tout configuré:
 
 1. **Déploiement automatique**: À chaque `git push origin main`, votre application se déploie automatiquement
-2. **Accès à l'API**: `http://84.247.183.206:8082`
-3. **Admin Django**: `http://84.247.183.206:8082/admin/`
-4. **Documentation**: `http://84.247.183.206:8082/swagger/` (si configuré)
+2. **Accès à l'API**: `http://84.247.172.198:8082`
+3. **Admin Django**: `http://84.247.172.198:8082/admin/`
+4. **Documentation**: `http://84.247.172.198:8082/swagger/` (si configuré)
 
 ## Architecture du déploiement
 
@@ -70,7 +70,7 @@ Une fois tout configuré:
          ▼ (SSH)
 ┌─────────────────┐
 │   VPS Server    │
-│  84.247.183.206 │
+│  84.247.172.198 │
 ├─────────────────┤
 │   Nginx :8082   │ ← Vous accédez ici
 │       ↓         │
@@ -126,7 +126,7 @@ git push origin main
 # Vérifier sur: GitHub → Actions
 
 # 5. Vérifier le déploiement
-curl http://84.247.183.206:8082
+curl http://84.247.172.198:8082
 ```
 
 **C'est tout! Bon déploiement!** 🚀

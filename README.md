@@ -28,21 +28,21 @@ Backend API REST pour la plateforme **Koursa** - Systeme de gestion academique e
 
 ## Deploiement Production
 
-- **URL API:** https://koursa.duckdns.org/api/
-- **Admin Django:** https://koursa.duckdns.org/django-admin/
-- **Documentation Swagger:** https://koursa.duckdns.org/swagger/
-- **Serveur:** 84.247.183.206 (softengine)
+- **URL API:** https://koursa.arited.org/api/
+- **Admin Django:** https://koursa.arited.org/django-admin/
+- **Documentation Swagger:** https://koursa.arited.org/swagger/
+- **Serveur:** 84.247.172.198 (softengine)
 - **SSL:** Let's Encrypt (renouvellement automatique via Certbot)
-- **Base de donnees:** PostgreSQL (koursa_db / koursa_user / mot de passe: koursa2026)
+- **Base de donnees:** PostgreSQL (koursa_db / koursa_user / mot de passe: <MOT_DE_PASSE_BD>)
 - **CI/CD:** GitHub Actions (deploiement automatique sur push main)
 
 ### Acces VPS
 
 | Info | Valeur |
 |------|--------|
-| Serveur | `84.247.183.206` |
+| Serveur | `84.247.172.198` |
 | Utilisateur SSH | `softengine` |
-| Mot de passe SSH | `o6ftAam6S` |
+| Mot de passe SSH | `<voir gestionnaire de secrets>` |
 | Chemin du projet | `/var/www/koursa-backend/KOURSA_BACKEND/koursa` |
 | Virtualenv | `/var/www/koursa-backend/KOURSA_BACKEND/koursa/venv` |
 | Fichier .env | `/var/www/koursa-backend/KOURSA_BACKEND/koursa/.env` |
@@ -52,14 +52,14 @@ Backend API REST pour la plateforme **Koursa** - Systeme de gestion academique e
 | Info | Valeur |
 |------|--------|
 | Email | `tiomelajorel@gmail.com` |
-| Mot de passe | `koursa@1234` |
+| Mot de passe | `<MOT_DE_PASSE_SUPERADMIN>` |
 | Role | Super Administrateur |
 
 ### Reset complet de la base de donnees
 
 ```bash
 # 1. Se connecter au serveur
-ssh softengine@84.247.183.206
+ssh koursa@84.247.172.198
 
 # 2. Arreter le service
 sudo systemctl stop koursa-backend
@@ -169,7 +169,7 @@ Exemple `.env` pour la production :
 ```env
 SECRET_KEY=une-cle-secrete-longue-et-aleatoire
 DEBUG=False
-ALLOWED_HOSTS=koursa.duckdns.org,84.247.183.206
+ALLOWED_HOSTS=koursa.arited.org,84.247.172.198
 DATABASE_URL=postgres://koursa_user:motdepasse@localhost:5432/koursa_db
 ```
 
@@ -198,7 +198,7 @@ L'API utilise **JWT (JSON Web Tokens)** pour l'authentification.
 ### Exemple de login
 
 ```bash
-curl -X POST https://koursa.duckdns.org/api/auth/token/ \
+curl -X POST https://koursa.arited.org/api/auth/token/ \
   -H "Content-Type: application/json" \
   -d '{"email": "user@example.com", "password": "motdepasse"}'
 ```
@@ -222,7 +222,7 @@ curl -X POST https://koursa.duckdns.org/api/auth/token/ \
 ### Utilisation du token
 
 ```bash
-curl -X GET https://koursa.duckdns.org/api/users/utilisateurs/ \
+curl -X GET https://koursa.arited.org/api/users/utilisateurs/ \
   -H "Authorization: Bearer <access_token>"
 ```
 
@@ -522,7 +522,7 @@ pip install -r requirements.txt
 SECRET_KEY=votre-cle-secrete
 DEBUG=True
 SUPERUSER_EMAIL=tiomelajorel@gmail.com
-SUPERUSER_PASSWORD=koursa@1234
+SUPERUSER_PASSWORD=<MOT_DE_PASSE_SUPERADMIN>
 ```
 
 5. **Appliquer les migrations** (cree automatiquement les 4 roles + le super admin)

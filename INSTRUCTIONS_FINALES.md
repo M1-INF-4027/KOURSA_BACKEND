@@ -2,7 +2,7 @@
 
 ## Configuration adaptée à votre serveur
 
-**Serveur VPS:** softengine@84.247.183.206
+**Serveur VPS:** koursa@84.247.172.198
 
 ### Ports configurés (LIBRES sur votre serveur):
 - **Port 8002** (interne) : Gunicorn
@@ -122,7 +122,7 @@ sudo chmod 755 /home/softengine
 exit
 
 # Reconnectez-vous
-ssh softengine@84.247.183.206
+ssh koursa@84.247.172.198
 ```
 
 ---
@@ -138,25 +138,25 @@ curl http://127.0.0.1:8082/
 ### Depuis votre ordinateur ou navigateur:
 
 ```
-http://84.247.183.206:8082/
+http://84.247.172.198:8082/
 ```
 
 ### Admin Django:
 
 ```
-http://84.247.183.206:8082/admin/
+http://84.247.172.198:8082/admin/
 ```
 
 ### API endpoints (si configurés):
 
 ```
-http://84.247.183.206:8082/api/
+http://84.247.172.198:8082/api/
 ```
 
 ### Swagger documentation (si configuré):
 
 ```
-http://84.247.183.206:8082/swagger/
+http://84.247.172.198:8082/swagger/
 ```
 
 ---
@@ -318,7 +318,7 @@ Créez 4 secrets:
 
 | Secret | Valeur |
 |--------|--------|
-| VPS_HOST | 84.247.183.206 |
+| VPS_HOST | 84.247.172.198 |
 | VPS_USERNAME | softengine |
 | VPS_SSH_KEY | Contenu de `$HOME\.ssh\koursa_deploy` (clé privée) |
 | VPS_PORT | 22 |
@@ -354,7 +354,7 @@ Le déploiement devrait se faire automatiquement! Vérifiez sur **GitHub → Act
 
 **URL de votre API:**
 ```
-http://84.247.183.206:8082
+http://84.247.172.198:8082
 ```
 
 **Déploiement automatique:**

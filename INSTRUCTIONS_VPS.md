@@ -1,7 +1,7 @@
 # Instructions de Déploiement - Koursa Backend
 ## Configuration spécifique pour votre VPS
 
-**Serveur VPS:** softengine@84.247.183.206
+**Serveur VPS:** koursa@84.247.172.198
 
 ---
 
@@ -40,7 +40,7 @@ Créez ces 4 secrets:
 
 | Nom du secret | Valeur |
 |---------------|--------|
-| `VPS_HOST` | `84.247.183.206` |
+| `VPS_HOST` | `84.247.172.198` |
 | `VPS_USERNAME` | `softengine` |
 | `VPS_SSH_KEY` | Le contenu de `~/.ssh/koursa_deploy` (clé privée complète) |
 | `VPS_PORT` | `22` |
@@ -61,7 +61,7 @@ git push origin main
 ### 1. Connexion au serveur
 
 ```bash
-ssh softengine@84.247.183.206
+ssh koursa@84.247.172.198
 ```
 
 ### 2. Ajouter la clé publique SSH
@@ -102,7 +102,7 @@ Dans le shell PostgreSQL, copiez et exécutez ligne par ligne:
 
 ```sql
 CREATE DATABASE koursa_db;
-CREATE USER koursa_user WITH PASSWORD 'koursa2026';
+CREATE USER koursa_user WITH PASSWORD '<MOT_DE_PASSE_BD>';
 ALTER ROLE koursa_user SET client_encoding TO 'utf8';
 ALTER ROLE koursa_user SET default_transaction_isolation TO 'read committed';
 ALTER ROLE koursa_user SET timezone TO 'UTC';
@@ -144,10 +144,10 @@ nano /var/www/koursa-backend/koursa/.env
 Copiez et modifiez ceci (remplacez YOUR_SECRET_KEY par celle générée):
 
 ```env
-SECRET_KEY=k18t%645(j3+3aan7j+c@()@r-7ygs+od%_h6$tz++fcbziirj
+SECRET_KEY=<SECRET_KEY_A_GENERER>
 DEBUG=False
-DATABASE_URL=postgresql://koursa_user:koursa2026@localhost:5432/koursa_db
-ALLOWED_HOSTS=84.247.183.206
+DATABASE_URL=postgresql://koursa_user:<MOT_DE_PASSE_BD>@localhost:5432/koursa_db
+ALLOWED_HOSTS=84.247.172.198
 ```
 
 Sauvegardez avec `Ctrl+O` puis `Entrée`, et quittez avec `Ctrl+X`.
@@ -261,7 +261,7 @@ exit
 Reconnectez-vous au serveur:
 
 ```bash
-ssh softengine@84.247.183.206
+ssh koursa@84.247.172.198
 ```
 
 ---
@@ -271,7 +271,7 @@ ssh softengine@84.247.183.206
 ### 1. Test de l'API
 
 ```bash
-curl http://84.247.183.206:8080/
+curl http://84.247.172.198:8080/
 ```
 
 Vous devriez voir une réponse de votre API.
@@ -280,7 +280,7 @@ Vous devriez voir une réponse de votre API.
 
 Ouvrez dans votre navigateur:
 ```
-http://84.247.183.206:8080/admin/
+http://84.247.172.198:8080/admin/
 ```
 
 ### 3. Test du déploiement automatique
@@ -306,13 +306,13 @@ Vous devriez voir le workflow "Deploy to VPS" en cours d'exécution.
 Votre API est accessible à:
 
 ```
-http://84.247.183.206:8080
+http://84.247.172.198:8080
 ```
 
 Endpoints probables:
-- Admin: `http://84.247.183.206:8080/admin/`
-- API: `http://84.247.183.206:8080/api/`
-- Swagger: `http://84.247.183.206:8080/swagger/`
+- Admin: `http://84.247.172.198:8080/admin/`
+- API: `http://84.247.172.198:8080/api/`
+- Swagger: `http://84.247.172.198:8080/swagger/`
 
 ---
 
@@ -372,7 +372,7 @@ sudo netstat -tlnp | grep 8001
 
 ```bash
 psql -U koursa_user -d koursa_db -h localhost
-# Mot de passe: koursa2026
+# Mot de passe: <MOT_DE_PASSE_BD>
 ```
 
 ### Permission denied sur le déploiement
@@ -408,7 +408,7 @@ git pull + pip install + migrate + collectstatic
      ↓
 Redémarrage du service
      ↓
-API disponible sur http://84.247.183.206:8080
+API disponible sur http://84.247.172.198:8080
 ```
 
 **Vous n'avez plus qu'à faire `git push` et tout se déploie automatiquement!**
