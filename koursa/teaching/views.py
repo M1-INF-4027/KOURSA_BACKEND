@@ -2,9 +2,17 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.parsers import MultiPartParser, FormParser
 from django.http import FileResponse
 from django.utils import timezone
+from django.db import transaction
 from django.db.models import Q
+from common.import_utils import (
+    ExcelInvalide,
+    ImportReport,
+    detect_niveau_from_code,
+    read_sheet,
+)
 from users.models import Role
 from users.permissions import IsEnseignantConcerne, IsFicheModifiable, IsDelegueAuteur, IsDelegue, IsHoD
 from .models import UniteEnseignement, FicheSuivi, StatutFiche
@@ -87,6 +95,249 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
         import logging
         logging.getLogger('koursa').warning(f'Toutes les UEs supprimees ({count}) par {request.user.email}')
         return Response({'deleted': count}, status=status.HTTP_200_OK)
+
+    # ------------------------------------------------------------------
+    # Imports Excel
+    # ------------------------------------------------------------------
+
+    def _resolve_semestres(self, annee_id=None):
+        """Renvoie {numero: Semestre} pour l'annee visee (active par defaut)."""
+        from academic.models import AnneeAcademique, Semestre
+
+        if annee_id:
+            annee = AnneeAcademique.objects.filter(pk=annee_id).first()
+        else:
+            annee = AnneeAcademique.objects.filter(est_active=True).first()
+        if not annee:
+            return {}, None
+        semestres = Semestre.objects.filter(annee_academique=annee)
+        return {s.numero: s for s in semestres}, annee
+
+    def _resolve_niveaux(self, filiere_id):
+        """Renvoie {nom_niveau majuscule: Niveau} pour la filiere visee."""
+        from academic.models import Niveau
+
+        if not filiere_id:
+            return {}
+        return {
+            n.nom_niveau.strip().upper(): n
+            for n in Niveau.objects.filter(filiere_id=filiere_id)
+        }
+
+    @action(detail=False, methods=['post'], parser_classes=[MultiPartParser, FormParser],
+            url_path='import')
+    def import_ues(self, request):
+        """
+        Importer des unites d'enseignement depuis un fichier Excel.
+
+        Colonnes reconnues : `code` et `libelle` (obligatoires), `semestre`,
+        `niveau` et `enseignant` (optionnelles).
+
+        Parametres : `filiere` (pour rattacher les niveaux), `semestre`
+        (numero par defaut si la colonne est absente) et `annee_academique`
+        (par defaut l'annee active).
+        """
+        from users.permissions import IsSuperAdmin
+
+        if not (IsSuperAdmin().has_permission(request, self) or IsHoD().has_permission(request, self)):
+            return Response({'detail': 'Acces refuse.'}, status=status.HTTP_403_FORBIDDEN)
+
+        file = request.FILES.get('file')
+        if not file:
+            return Response({'detail': 'Aucun fichier fourni.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            rows = read_sheet(file, required=['code'])
+        except ExcelInvalide as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        semestres, annee = self._resolve_semestres(request.data.get('annee_academique'))
+        if not semestres:
+            return Response(
+                {'detail': "Aucune annee academique active avec des semestres configures."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        niveaux = self._resolve_niveaux(request.data.get('filiere'))
+        semestre_defaut = request.data.get('semestre')
+
+        # Niveaux imposes a toutes les lignes, en complement de ceux deduits
+        # ligne par ligne (selection manuelle depuis l'interface).
+        niveaux_imposes = []
+        brut = request.data.get('niveaux')
+        if brut:
+            from academic.models import Niveau
+
+            ids = [p.strip() for p in str(brut).split(',') if p.strip().isdigit()]
+            niveaux_imposes = list(Niveau.objects.filter(pk__in=ids))
+
+        report = ImportReport()
+
+        with transaction.atomic():
+            for line, values in rows:
+                code = (values.get('code') or '').strip().upper()
+                if not code:
+                    continue
+                libelle = (values.get('libelle') or '').strip() or code
+
+                # Semestre : colonne du fichier, sinon valeur par defaut du formulaire.
+                numero_brut = (values.get('semestre') or '').strip() or str(semestre_defaut or '')
+                try:
+                    numero = int(float(numero_brut))
+                except (TypeError, ValueError):
+                    report.error(line, f"Semestre illisible pour {code} : '{numero_brut}'")
+                    continue
+                semestre_obj = semestres.get(numero)
+                if not semestre_obj:
+                    report.error(line, f"Semestre {numero} inexistant pour l'annee {annee.libelle}.")
+                    continue
+
+                ue, cree = UniteEnseignement.objects.update_or_create(
+                    code_ue=code,
+                    semestre_obj=semestre_obj,
+                    defaults={'libelle_ue': libelle, 'semestre': numero},
+                )
+
+                # Niveau : colonne explicite prioritaire, sinon deduction depuis le code.
+                nom_niveau = (values.get('niveau') or '').strip().upper()
+                if not nom_niveau:
+                    nom_niveau = detect_niveau_from_code(code) or ''
+                if nom_niveau and niveaux:
+                    niveau = niveaux.get(nom_niveau)
+                    if niveau:
+                        ue.niveaux.add(niveau)
+                for niveau in niveaux_imposes:
+                    ue.niveaux.add(niveau)
+
+                # Enseignant : par email si disponible, sinon par nom.
+                enseignant = self._match_enseignant(
+                    values.get('enseignant_email'), values.get('enseignant')
+                )
+                if enseignant:
+                    ue.enseignants.add(enseignant)
+
+                if cree:
+                    report.created += 1
+                else:
+                    report.updated += 1
+
+        import logging
+        logging.getLogger('koursa').info(
+            f'Import UEs par {request.user.email}: '
+            f'{report.created} creees, {report.updated} mises a jour'
+        )
+        return Response(report.as_dict(), status=status.HTTP_200_OK)
+
+    def _match_enseignant(self, email, nom):
+        """
+        Retrouve un enseignant par email, avec repli sur le nom.
+
+        L'email est la cle fiable : les fichiers d'affectation le fournissent,
+        alors que les noms varient en casse et en ordre.
+        """
+        from users.models import Utilisateur
+
+        email = (email or '').strip().lower()
+        if email:
+            user = Utilisateur.objects.filter(email__iexact=email).first()
+            if user:
+                return user
+
+        nom = (nom or '').strip()
+        if not nom:
+            return None
+        # Recherche sur le nom complet, puis sur chaque partie.
+        qs = Utilisateur.objects.filter(roles__nom_role=Role.ENSEIGNANT)
+        for terme in [nom] + nom.split():
+            if len(terme) < 3:
+                continue
+            trouve = qs.filter(
+                Q(last_name__iexact=terme) | Q(first_name__iexact=terme)
+            ).first()
+            if trouve:
+                return trouve
+        return None
+
+    @action(detail=False, methods=['post'], parser_classes=[MultiPartParser, FormParser],
+            url_path='import-affectations')
+    def import_affectations(self, request):
+        """
+        Rattacher des enseignants a des UEs depuis un fichier Excel.
+
+        Colonnes reconnues : `code` (obligatoire), `enseignant_email`,
+        `enseignant`, `semestre` et `niveau`.
+
+        L'UE doit exister ; ce endpoint n'en cree aucune.
+        """
+        from users.permissions import IsSuperAdmin
+
+        if not (IsSuperAdmin().has_permission(request, self) or IsHoD().has_permission(request, self)):
+            return Response({'detail': 'Acces refuse.'}, status=status.HTTP_403_FORBIDDEN)
+
+        file = request.FILES.get('file')
+        if not file:
+            return Response({'detail': 'Aucun fichier fourni.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            rows = read_sheet(file, required=['code'])
+        except ExcelInvalide as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        semestres, annee = self._resolve_semestres(request.data.get('annee_academique'))
+        niveaux = self._resolve_niveaux(request.data.get('filiere'))
+        report = ImportReport()
+
+        with transaction.atomic():
+            for line, values in rows:
+                code = (values.get('code') or '').strip().upper()
+                if not code:
+                    continue
+
+                ues = UniteEnseignement.objects.filter(code_ue__iexact=code)
+                numero_brut = (values.get('semestre') or '').strip()
+                if numero_brut and semestres:
+                    try:
+                        semestre_obj = semestres.get(int(float(numero_brut)))
+                    except (TypeError, ValueError):
+                        semestre_obj = None
+                    if semestre_obj:
+                        ues = ues.filter(semestre_obj=semestre_obj)
+
+                ue = ues.first()
+                if not ue:
+                    report.error(line, f"UE introuvable : {code}. Importez d'abord les UEs.")
+                    continue
+
+                enseignant = self._match_enseignant(
+                    values.get('enseignant_email'), values.get('enseignant')
+                )
+                if not enseignant:
+                    identite = values.get('enseignant_email') or values.get('enseignant') or '?'
+                    report.error(
+                        line,
+                        f"Enseignant introuvable pour {code} : {identite}. "
+                        f"Importez d'abord les comptes enseignants.",
+                    )
+                    continue
+
+                if ue.enseignants.filter(pk=enseignant.pk).exists():
+                    report.skipped += 1
+                else:
+                    ue.enseignants.add(enseignant)
+                    report.updated += 1
+
+                nom_niveau = (values.get('niveau') or '').strip().upper()
+                if nom_niveau and niveaux:
+                    niveau = niveaux.get(nom_niveau)
+                    if niveau:
+                        ue.niveaux.add(niveau)
+
+        import logging
+        logging.getLogger('koursa').info(
+            f'Import affectations par {request.user.email}: '
+            f'{report.updated} rattachements, {report.skipped} deja en place, '
+            f'{len(report.errors)} erreurs'
+        )
+        return Response(report.as_dict(), status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['get'], url_path='mes-delegues')
     def mes_delegues(self, request):

@@ -201,6 +201,7 @@ class SetupChecklistView(APIView):
                     'filieres_creees': False,
                     'niveaux_crees': False,
                     'salles_creees': False,
+                    'enseignants_crees': False,
                     'ues_creees': False,
                     'ues_sans_enseignant': 0,
                     'departements_sans_chef': Departement.objects.count(),
@@ -208,8 +209,13 @@ class SetupChecklistView(APIView):
                 'est_configuree': False,
             })
 
+        from users.models import Role, Utilisateur
+
         semestres = annee.semestres.all()
         ues_in_year = UniteEnseignement.objects.filter(semestre_obj__annee_academique=annee)
+        enseignants_existent = Utilisateur.objects.filter(
+            roles__nom_role=Role.ENSEIGNANT
+        ).exists()
 
         return Response({
             'annee': AnneeAcademiqueSerializer(annee).data,
@@ -221,6 +227,7 @@ class SetupChecklistView(APIView):
                 'filieres_creees': Filiere.objects.exists(),
                 'niveaux_crees': Niveau.objects.exists(),
                 'salles_creees': Salle.objects.filter(est_active=True).exists(),
+                'enseignants_crees': enseignants_existent,
                 'ues_creees': ues_in_year.exists(),
                 'ues_sans_enseignant': ues_in_year.filter(enseignants__isnull=True).count(),
                 'departements_sans_chef': Departement.objects.filter(chef_departement__isnull=True).count(),

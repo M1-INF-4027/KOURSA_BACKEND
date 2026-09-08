@@ -4,10 +4,13 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.throttling import AnonRateThrottle
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django.conf import settings
+from django.db import transaction
+from common.import_utils import ExcelInvalide, ImportReport, read_sheet
 import firebase_admin
 from firebase_admin import auth as firebase_auth
 from .models import Utilisateur, Role, StatutCompte, AuthProvider, EmailWhitelist
@@ -201,6 +204,75 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         request.user.set_password(serializer.validated_data['new_password'])
         request.user.save()
         return Response({"detail": "Mot de passe modifié avec succès."}, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'], permission_classes=[IsSuperAdmin],
+            parser_classes=[MultiPartParser, FormParser], url_path='import-enseignants')
+    def import_enseignants(self, request):
+        """
+        Creer des comptes enseignants depuis un fichier Excel.
+
+        Colonnes reconnues : `email` (obligatoire), `nom_complet` (optionnel).
+        Accepte donc aussi bien Import_Emails_Enseignants_*.xlsx que
+        Import_Whitelist_*.xlsx.
+
+        Le mot de passe initial est l'adresse email elle-meme, afin que les
+        enseignants puissent se connecter sans echange prealable.
+        """
+        file = request.FILES.get('file')
+        if not file:
+            return Response({'detail': 'Aucun fichier fourni.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            rows = read_sheet(file, required=['email'])
+        except ExcelInvalide as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        role_enseignant, _ = Role.objects.get_or_create(nom_role=Role.ENSEIGNANT)
+        report = ImportReport()
+
+        with transaction.atomic():
+            for line, values in rows:
+                email = (values.get('email') or '').strip().lower()
+                if not email:
+                    continue
+                if '@' not in email:
+                    report.error(line, f"Adresse email invalide : {email}")
+                    continue
+
+                nom_complet = (values.get('nom_complet') or '').strip()
+                # "Adamou Hamza" -> prenom "Adamou", nom "Hamza"
+                parts = nom_complet.split(' ', 1) if nom_complet else ['', '']
+                first_name = parts[0]
+                last_name = parts[1] if len(parts) > 1 else ''
+
+                user = Utilisateur.objects.filter(email__iexact=email).first()
+                if user:
+                    # Compte deja present : on ne touche ni au mot de passe ni au statut,
+                    # on garantit seulement le role Enseignant.
+                    if not user.roles.filter(nom_role=Role.ENSEIGNANT).exists():
+                        user.roles.add(role_enseignant)
+                        report.updated += 1
+                    else:
+                        report.skipped += 1
+                    continue
+
+                user = Utilisateur(
+                    email=email,
+                    first_name=first_name,
+                    last_name=last_name,
+                    statut=StatutCompte.ACTIF,
+                    auth_provider=AuthProvider.PASSWORD,
+                )
+                user.set_password(email)
+                user.save()
+                user.roles.add(role_enseignant)
+                report.created += 1
+
+        logger.info(
+            f'Import enseignants par {request.user.email}: '
+            f'{report.created} crees, {report.updated} mis a jour, {report.skipped} ignores'
+        )
+        return Response(report.as_dict(), status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated], url_path='register-fcm-token')
     def register_fcm_token(self, request):
@@ -431,6 +503,89 @@ class EmailWhitelistViewSet(viewsets.ModelViewSet):
         qs.delete()
         logger.warning(f'Whitelist videe ({count} emails) par {request.user.email}')
         return Response({'deleted': count}, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'], parser_classes=[MultiPartParser, FormParser],
+            url_path='import')
+    def import_whitelist(self, request):
+        """
+        Importer des emails autorises depuis un fichier Excel.
+
+        Colonnes reconnues : `email` (obligatoire), `role` et `nom_complet`
+        (optionnels). Le departement est pris du parametre `departement`, ou
+        force a celui du chef de departement connecte.
+        """
+        file = request.FILES.get('file')
+        if not file:
+            return Response({'detail': 'Aucun fichier fourni.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user
+        est_admin = user.roles.filter(nom_role=Role.SUPER_ADMIN).exists() or user.is_superuser
+        if est_admin:
+            departement_id = request.data.get('departement')
+            if not departement_id:
+                return Response(
+                    {'detail': "Le champ 'departement' est requis."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            departement = Departement.objects.filter(pk=departement_id).first()
+            if not departement:
+                return Response(
+                    {'detail': "Departement introuvable."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        else:
+            departement = getattr(user, 'departement_gere', None)
+            if not departement:
+                return Response(
+                    {'detail': "Aucun departement associe a votre compte."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        try:
+            rows = read_sheet(file, required=['email'])
+        except ExcelInvalide as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        roles_valides = {choix[0] for choix in EmailWhitelist.ROLE_CHOICES}
+        # Rôle applique aux lignes dont la colonne `role` est absente ou vide.
+        role_defaut = (request.data.get('role_defaut') or 'ENSEIGNANT').strip().upper()
+        report = ImportReport()
+
+        with transaction.atomic():
+            for line, values in rows:
+                email = (values.get('email') or '').strip().lower()
+                if not email:
+                    continue
+                if '@' not in email:
+                    report.error(line, f"Adresse email invalide : {email}")
+                    continue
+
+                role_type = (values.get('role') or role_defaut).strip().upper()
+                if role_type not in roles_valides:
+                    report.error(
+                        line,
+                        f"Role inconnu : {role_type}. Valeurs acceptees : {', '.join(sorted(roles_valides))}.",
+                    )
+                    continue
+
+                _, cree = EmailWhitelist.objects.get_or_create(
+                    email=email,
+                    defaults={
+                        'role_type': role_type,
+                        'departement': departement,
+                        'ajoute_par': user,
+                    },
+                )
+                if cree:
+                    report.created += 1
+                else:
+                    report.skipped += 1
+
+        logger.info(
+            f'Import whitelist par {user.email}: '
+            f'{report.created} ajoutes, {report.skipped} deja presents'
+        )
+        return Response(report.as_dict(), status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['post'], url_path='bulk')
     def bulk_create(self, request):
