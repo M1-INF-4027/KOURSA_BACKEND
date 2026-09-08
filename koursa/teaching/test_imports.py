@@ -389,3 +389,101 @@ class TestParametresImport:
 
         apres = c.get('/api/configuration/checklist/').data['checklist']
         assert apres['enseignants_crees'] is True
+
+
+# ═══════════════════════════════════════════════════════
+#  Structure academique
+# ═══════════════════════════════════════════════════════
+
+@pytest.mark.django_db
+class TestImportStructure:
+
+    URL = '/api/academic/structure/import/'
+
+    def test_creation_de_la_hierarchie_complete(self, api, admin_user):
+        from academic.models import Faculte, Departement, Filiere, Niveau
+
+        c = auth_client(api, admin_user)
+        fichier = classeur(
+            ['faculte', 'departement', 'filiere', 'niveau'],
+            [
+                ['Faculte des Sciences', 'Informatique', 'Informatique Fondamentale', 'L1'],
+                ['Faculte des Sciences', 'Informatique', 'Informatique Fondamentale', 'L2'],
+                ['Faculte des Sciences', 'Informatique', 'Informatique Professionnelle', 'L1'],
+            ],
+        )
+        res = c.post(self.URL, {'file': fichier}, format='multipart')
+
+        assert res.status_code == status.HTTP_200_OK
+        assert res.data['created'] == 3
+        # La faculte et le departement ne sont crees qu'une fois, malgre 3 lignes
+        assert Faculte.objects.count() == 1
+        assert Departement.objects.count() == 1
+        # Fonda et Pro sont bien deux filieres distinctes
+        assert Filiere.objects.count() == 2
+        assert Niveau.objects.count() == 3
+
+    def test_niveaux_rattaches_a_la_bonne_filiere(self, api, admin_user):
+        from academic.models import Filiere
+
+        c = auth_client(api, admin_user)
+        fichier = classeur(
+            ['faculte', 'departement', 'filiere', 'niveau'],
+            [['F', 'D', 'Fonda', 'L1'], ['F', 'D', 'Pro', 'L1']],
+        )
+        c.post(self.URL, {'file': fichier}, format='multipart')
+
+        fonda = Filiere.objects.get(nom_filiere='Fonda')
+        pro = Filiere.objects.get(nom_filiere='Pro')
+        assert fonda.niveaux.count() == 1
+        assert pro.niveaux.count() == 1
+        assert fonda.niveaux.first().id != pro.niveaux.first().id
+
+    def test_rejoue_sans_doublon(self, api, admin_user):
+        from academic.models import Niveau
+
+        c = auth_client(api, admin_user)
+        lignes = [['F', 'D', 'Fonda', 'L1']]
+        entetes = ['faculte', 'departement', 'filiere', 'niveau']
+        c.post(self.URL, {'file': classeur(entetes, lignes)}, format='multipart')
+        res = c.post(self.URL, {'file': classeur(entetes, lignes)}, format='multipart')
+
+        assert res.data['created'] == 0
+        assert res.data['skipped'] == 1
+        assert Niveau.objects.count() == 1
+
+    def test_niveau_facultatif(self, api, admin_user):
+        """Une ligne sans niveau cree seulement la branche faculte/departement/filiere."""
+        from academic.models import Filiere, Niveau
+
+        c = auth_client(api, admin_user)
+        fichier = classeur(['faculte', 'departement', 'filiere'], [['F', 'D', 'Fonda']])
+        res = c.post(self.URL, {'file': fichier}, format='multipart')
+
+        assert res.status_code == status.HTTP_200_OK
+        assert Filiere.objects.count() == 1
+        assert Niveau.objects.count() == 0
+
+    def test_ligne_incomplete_reportee(self, api, admin_user):
+        c = auth_client(api, admin_user)
+        fichier = classeur(
+            ['faculte', 'departement', 'filiere', 'niveau'],
+            [['F', 'D', 'Fonda', 'L1'], ['F', '', 'Pro', 'L1']],
+        )
+        res = c.post(self.URL, {'file': fichier}, format='multipart')
+
+        assert res.data['created'] == 1
+        assert len(res.data['errors']) == 1
+        assert res.data['errors'][0]['ligne'] == 3
+
+    def test_colonnes_manquantes_rejetees(self, api, admin_user):
+        c = auth_client(api, admin_user)
+        fichier = classeur(['faculte'], [['F']])
+        res = c.post(self.URL, {'file': fichier}, format='multipart')
+        assert res.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_reserve_au_super_admin(self, api, chef_user):
+        c = auth_client(api, chef_user)
+        fichier = classeur(['faculte', 'departement', 'filiere'], [['F', 'D', 'X']])
+        res = c.post(self.URL, {'file': fichier}, format='multipart')
+        assert res.status_code == status.HTTP_403_FORBIDDEN

@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     FaculteViewSet, DepartementViewSet, FiliereViewSet, NiveauViewSet,
     AnneeAcademiqueViewSet, SemestreViewSet, HistoriqueChefViewSet,
-    SalleViewSet,
+    SalleViewSet, StructureImportView,
 )
 
 router = DefaultRouter()
@@ -17,5 +17,6 @@ router.register(r'historique-chefs', HistoriqueChefViewSet, basename='historique
 router.register(r'salles', SalleViewSet, basename='salle')
 
 urlpatterns = [
+    path('structure/import/', StructureImportView.as_view(), name='structure-import'),
     path('', include(router.urls)),
 ]

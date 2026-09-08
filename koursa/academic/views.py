@@ -4,6 +4,9 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.views import APIView
+from django.db import transaction
+from common.import_utils import ExcelInvalide, ImportReport, read_sheet
 from users.permissions import IsSuperAdmin
 from users.models import Role
 
@@ -177,3 +180,71 @@ class HistoriqueChefViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = HistoriqueChefSerializer
     permission_classes = [IsAuthenticated]
     filterset_fields = ['departement', 'annee_academique']
+
+class StructureImportView(APIView):
+    """
+    POST /api/academic/structure/import/
+
+    Importe la hierarchie academique complete depuis un fichier Excel :
+    Faculte -> Departement -> Filiere -> Niveau, une ligne par niveau.
+
+    Colonnes reconnues : `faculte`, `departement`, `filiere`, `niveau`.
+    Chaque niveau de la hierarchie est cree s'il n'existe pas, ce qui rend le
+    fichier rejouable et permet de le completer par la suite.
+    """
+    permission_classes = [IsSuperAdmin]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        file = request.FILES.get('file')
+        if not file:
+            return Response({'detail': 'Aucun fichier fourni.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            rows = read_sheet(file, required=['faculte', 'departement', 'filiere'])
+        except ExcelInvalide as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        report = ImportReport()
+
+        with transaction.atomic():
+            for line, values in rows:
+                nom_faculte = (values.get('faculte') or '').strip()
+                nom_departement = (values.get('departement') or '').strip()
+                nom_filiere = (values.get('filiere') or '').strip()
+                nom_niveau = (values.get('niveau') or '').strip().upper()
+
+                if not (nom_faculte and nom_departement and nom_filiere):
+                    report.error(
+                        line,
+                        'Les colonnes faculte, departement et filiere doivent etre renseignees.',
+                    )
+                    continue
+
+                faculte, _ = Faculte.objects.get_or_create(nom_faculte=nom_faculte)
+                departement, _ = Departement.objects.get_or_create(
+                    nom_departement=nom_departement, faculte=faculte
+                )
+                filiere, _ = Filiere.objects.get_or_create(
+                    nom_filiere=nom_filiere, departement=departement
+                )
+
+                # La colonne niveau est facultative : une ligne sans niveau cree
+                # seulement la branche faculte / departement / filiere.
+                if not nom_niveau:
+                    report.skipped += 1
+                    continue
+
+                _, cree = Niveau.objects.get_or_create(
+                    nom_niveau=nom_niveau, filiere=filiere
+                )
+                if cree:
+                    report.created += 1
+                else:
+                    report.skipped += 1
+
+        logger.info(
+            f'Import structure par {request.user.email}: '
+            f'{report.created} niveaux crees, {report.skipped} deja presents'
+        )
+        return Response(report.as_dict(), status=status.HTTP_200_OK)
