@@ -171,3 +171,105 @@ class ImportReport:
             'errors': self.errors,
             'total': self.created + self.updated + self.skipped + len(self.errors),
         }
+
+
+# ---------------------------------------------------------------------------
+# Import en deux temps : simulation puis validation
+# ---------------------------------------------------------------------------
+
+# Statuts d'une ligne simulee.
+STATUT_OK = 'ok'                      # prete a etre ecrite
+STATUT_PARENT_ABSENT = 'parent_absent'  # le parent nomme n'existe pas encore
+STATUT_DOUBLON = 'doublon'            # deja presente en base
+STATUT_ERREUR = 'erreur'              # ligne inexploitable
+
+
+class PreviewReport:
+    """
+    Resultat d'une simulation d'import.
+
+    Symetrique d'ImportReport : la simulation decrit ce qui *serait* ecrit,
+    l'ecriture rapporte ce qui l'a ete. Le navigateur consomme les deux avec le
+    meme composant.
+    """
+
+    def __init__(self):
+        self.lignes = []
+
+    def ajouter(self, ligne, valeurs, parent=None, statut=STATUT_OK, message=None):
+        """
+        `parent` decrit le rattachement propose :
+            {'champ': 'departement', 'id': 3 ou None, 'libelle': 'Informatique'}
+        Un id nul avec un libelle renseigne signale un parent a arbitrer.
+        """
+        self.lignes.append({
+            'ligne': ligne,
+            'valeurs': valeurs,
+            'parent': parent,
+            'statut': statut,
+            'message': message,
+        })
+
+    def as_dict(self):
+        compte = {}
+        for l in self.lignes:
+            compte[l['statut']] = compte.get(l['statut'], 0) + 1
+        return {
+            'lignes': self.lignes,
+            'resume': compte,
+            'total': len(self.lignes),
+        }
+
+
+def est_simulation(request):
+    """Vrai si l'appel demande une simulation plutot qu'une ecriture."""
+    valeur = request.data.get('dry_run') or request.query_params.get('dry_run')
+    return str(valeur).lower() in ('1', 'true', 'oui', 'yes')
+
+
+def parse_rows(request, required=None):
+    """
+    Retourne les lignes a traiter, quelle que soit la forme de l'appel.
+
+    Deux entrees possibles :
+      - un fichier Excel (`file`), lors de la simulation initiale ;
+      - un tableau JSON `rows`, lors de la validation, apres arbitrage de
+        l'administrateur dans l'apercu.
+
+    Dans les deux cas le format de sortie est identique — [(numero, dict)] —
+    de sorte que les endpoints n'ont pas a se dedoubler.
+
+    Leve ExcelInvalide si aucune entree exploitable n'est fournie.
+    """
+    fichier = request.FILES.get('file')
+    if fichier is not None:
+        return read_sheet(fichier, required=required)
+
+    rows = request.data.get('rows')
+    if isinstance(rows, str):
+        import json
+        try:
+            rows = json.loads(rows)
+        except ValueError:
+            raise ExcelInvalide("Le champ 'rows' n'est pas un JSON valide.")
+
+    if not rows:
+        raise ExcelInvalide("Aucun fichier ni aucune ligne fournie.")
+    if not isinstance(rows, list):
+        raise ExcelInvalide("Le champ 'rows' doit etre une liste.")
+
+    resultat = []
+    for i, brut in enumerate(rows, start=2):
+        if not isinstance(brut, dict):
+            continue
+        # Le numero de ligne d'origine est conserve pour que les messages
+        # d'erreur restent comprehensibles apres edition dans l'apercu.
+        numero = brut.get('ligne', i)
+        valeurs = brut.get('valeurs', brut)
+        valeurs = {k: ('' if v is None else str(v).strip()) for k, v in valeurs.items()}
+        # Champs de pilotage transmis par l'apercu.
+        for cle in ('parent_id', 'creer_parent', 'parent_libelle'):
+            if cle in brut:
+                valeurs[cle] = brut[cle]
+        resultat.append((numero, valeurs))
+    return resultat

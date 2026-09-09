@@ -546,3 +546,208 @@ class TestChangementImpose:
 
         assert res.status_code == status.HTTP_200_OK
         assert res.data['doit_changer_mot_de_passe'] is True
+
+
+# ═══════════════════════════════════════════════════════
+#  Configuration deduite de la checklist
+# ═══════════════════════════════════════════════════════
+
+@pytest.mark.django_db
+class TestConfigurationDeduite:
+
+    STATUS = '/api/configuration/status/'
+    CHECKLIST = '/api/configuration/checklist/'
+
+    def _marquer(self, api, admin_user, annee_id):
+        return auth_client(api, admin_user).post(
+            f'/api/configuration/annee-academique/{annee_id}/marquer-configuree/'
+        )
+
+    def test_marquage_refuse_si_incomplet(self, api, admin_user, annee_active):
+        """Le blocage subi en production : une annee vide ne peut plus etre declaree prete."""
+        # La fixture cree l'annee deja marquee : on repart d'un etat non declare.
+        annee_active['annee'].est_configuree = False
+        annee_active['annee'].save()
+
+        res = self._marquer(api, admin_user, annee_active['annee'].id)
+
+        assert res.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'etapes_manquantes' in res.data
+        assert 'au moins une faculte' in res.data['etapes_manquantes']
+
+        annee_active['annee'].refresh_from_db()
+        assert annee_active['annee'].est_configuree is False
+
+    def test_drapeau_seul_ne_suffit_pas(self, api, admin_user, annee_active):
+        """Meme forcee en base, une annee sans donnees n'est pas rapportee configuree."""
+        annee_active['annee'].est_configuree = True
+        annee_active['annee'].save()
+
+        res = auth_client(api, admin_user).get(self.STATUS)
+        assert res.data['est_configure'] is False
+
+    def test_marquage_accepte_quand_tout_est_la(self, api, admin_user, annee_active, structure):
+        from academic.models import Salle
+        from teaching.models import UniteEnseignement
+
+        Salle.objects.create(nom_salle='A100', est_active=True)
+        UniteEnseignement.objects.create(
+            code_ue='INF1', libelle_ue='Test',
+            semestre=1, semestre_obj=annee_active['s1'],
+        )
+
+        res = self._marquer(api, admin_user, annee_active['annee'].id)
+        assert res.status_code == status.HTTP_200_OK
+
+        annee_active['annee'].refresh_from_db()
+        assert annee_active['annee'].est_configuree is True
+        assert auth_client(api, admin_user).get(self.STATUS).data['est_configure'] is True
+
+    def test_checklist_annonce_les_etapes_manquantes(self, api, admin_user, annee_active):
+        res = auth_client(api, admin_user).get(self.CHECKLIST)
+
+        assert res.status_code == status.HTTP_200_OK
+        assert res.data['est_configuree'] is False
+        # Annee et semestres sont satisfaits, le reste manque
+        assert "l'annee academique" not in res.data['etapes_manquantes']
+        assert 'au moins un departement' in res.data['etapes_manquantes']
+
+    def test_enseignants_et_chefs_ne_bloquent_pas(self, api, admin_user, annee_active, structure):
+        """Ils sont recommandes, pas obligatoires : une annee peut demarrer sans."""
+        from academic.models import Salle
+        from teaching.models import UniteEnseignement
+        from users.models import Role, Utilisateur
+
+        Salle.objects.create(nom_salle='A100', est_active=True)
+        UniteEnseignement.objects.create(
+            code_ue='INF1', libelle_ue='Test',
+            semestre=1, semestre_obj=annee_active['s1'],
+        )
+        assert not Utilisateur.objects.filter(roles__nom_role=Role.ENSEIGNANT).exists()
+
+        assert self._marquer(api, admin_user, annee_active['annee'].id).status_code == status.HTTP_200_OK
+
+
+# ═══════════════════════════════════════════════════════
+#  Import en deux temps : simulation puis validation
+# ═══════════════════════════════════════════════════════
+
+@pytest.mark.django_db
+class TestSimulationHierarchique:
+
+    FILIERES = '/api/academic/filieres/import/'
+    DEPARTEMENTS = '/api/academic/departements/import/'
+
+    def test_simulation_n_ecrit_rien(self, api, admin_user, structure):
+        """Le point cardinal : une simulation ne doit laisser aucune trace."""
+        from academic.models import Filiere
+
+        avant = Filiere.objects.count()
+        c = auth_client(api, admin_user)
+        fichier = classeur(['filiere', 'departement'],
+                           [['Nouvelle Filiere', 'Informatique']])
+        res = c.post(self.FILIERES, {'file': fichier, 'dry_run': '1'}, format='multipart')
+
+        assert res.status_code == status.HTTP_200_OK
+        assert Filiere.objects.count() == avant, "la simulation a ecrit en base"
+        assert res.data['lignes'][0]['statut'] == 'ok'
+        assert res.data['lignes'][0]['parent']['libelle'] == 'Informatique'
+
+    def test_parent_absent_signale(self, api, admin_user, structure):
+        c = auth_client(api, admin_user)
+        fichier = classeur(['filiere', 'departement'],
+                           [['Filiere X', 'Departement Inexistant']])
+        res = c.post(self.FILIERES, {'file': fichier, 'dry_run': '1'}, format='multipart')
+
+        ligne = res.data['lignes'][0]
+        assert ligne['statut'] == 'parent_absent'
+        assert 'Departement Inexistant' in ligne['message']
+        assert ligne['parent']['id'] is None
+
+    def test_doublon_signale(self, api, admin_user, structure):
+        c = auth_client(api, admin_user)
+        fichier = classeur(['filiere', 'departement'],
+                           [[structure['filiere'].nom_filiere, 'Informatique']])
+        res = c.post(self.FILIERES, {'file': fichier, 'dry_run': '1'}, format='multipart')
+
+        assert res.data['lignes'][0]['statut'] == 'doublon'
+
+    def test_validation_par_lignes_json(self, api, admin_user, structure):
+        """Apres arbitrage, l'apercu renvoie des lignes avec un parent explicite."""
+        from academic.models import Filiere
+
+        c = auth_client(api, admin_user)
+        res = c.post(self.FILIERES, {
+            'rows': [{
+                'ligne': 2,
+                'valeurs': {'filiere': 'Filiere Arbitree'},
+                'parent_id': structure['departement'].id,
+            }],
+        }, format='json')
+
+        assert res.status_code == status.HTTP_200_OK
+        assert res.data['created'] == 1
+        creee = Filiere.objects.get(nom_filiere='Filiere Arbitree')
+        assert creee.departement == structure['departement']
+
+    def test_valeur_corrigee_prise_en_compte(self, api, admin_user, structure):
+        """La valeur ecrite est celle de l'apercu, pas celle du fichier d'origine."""
+        from academic.models import Filiere
+
+        c = auth_client(api, admin_user)
+        c.post(self.FILIERES, {
+            'rows': [{
+                'valeurs': {'filiere': 'Libelle Corrige'},
+                'parent_id': structure['departement'].id,
+            }],
+        }, format='json')
+
+        assert Filiere.objects.filter(nom_filiere='Libelle Corrige').exists()
+
+    def test_creation_du_parent_sur_autorisation(self, api, admin_user, structure):
+        from academic.models import Departement, Filiere
+
+        c = auth_client(api, admin_user)
+        res = c.post(self.FILIERES, {
+            'rows': [{
+                'valeurs': {'filiere': 'Filiere Neuve', 'departement': 'Departement Neuf'},
+                'creer_parent': True,
+            }],
+        }, format='json')
+
+        assert res.status_code == status.HTTP_200_OK
+        assert Departement.objects.filter(nom_departement='Departement Neuf').exists()
+        assert Filiere.objects.get(nom_filiere='Filiere Neuve').departement.nom_departement == 'Departement Neuf'
+
+    def test_parent_absent_non_arbitre_n_ecrit_pas(self, api, admin_user, structure):
+        from academic.models import Filiere
+
+        c = auth_client(api, admin_user)
+        res = c.post(self.FILIERES, {
+            'rows': [{'valeurs': {'filiere': 'Orpheline', 'departement': 'Absent'}}],
+        }, format='json')
+
+        assert res.data['created'] == 0
+        assert len(res.data['errors']) == 1
+        assert not Filiere.objects.filter(nom_filiere='Orpheline').exists()
+
+    def test_departements_rattaches_a_une_faculte(self, api, admin_user, structure):
+        from academic.models import Departement
+
+        c = auth_client(api, admin_user)
+        res = c.post(self.DEPARTEMENTS, {
+            'rows': [{
+                'valeurs': {'departement': 'Mathematiques'},
+                'parent_id': structure['faculte'].id,
+            }],
+        }, format='json')
+
+        assert res.data['created'] == 1
+        assert Departement.objects.get(nom_departement='Mathematiques').faculte == structure['faculte']
+
+    def test_reserve_au_super_admin(self, api, chef_user, structure):
+        c = auth_client(api, chef_user)
+        res = c.post(self.FILIERES, {
+            'rows': [{'valeurs': {'filiere': 'X'}, 'parent_id': structure['departement'].id}],
+        }, format='json')
+        assert res.status_code == status.HTTP_403_FORBIDDEN
