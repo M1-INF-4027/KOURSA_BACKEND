@@ -554,22 +554,27 @@ class EmailWhitelistViewSet(viewsets.ModelViewSet):
         """
         user = request.user
         est_admin = user.roles.filter(nom_role=Role.SUPER_ADMIN).exists() or user.is_superuser
+        simulation = est_simulation(request)
+        departement = None
         if est_admin:
             departement_id = request.data.get('departement')
-            if not departement_id:
+            # Une simulation n'ecrit rien : elle n'a pas besoin du departement,
+            # ce qui permet de previsualiser un fichier avant de l'avoir choisi.
+            if not departement_id and not simulation:
                 return Response(
                     {'detail': "Le champ 'departement' est requis."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            departement = Departement.objects.filter(pk=departement_id).first()
-            if not departement:
-                return Response(
-                    {'detail': "Departement introuvable."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+            if departement_id:
+                departement = Departement.objects.filter(pk=departement_id).first()
+                if not departement and not simulation:
+                    return Response(
+                        {'detail': "Departement introuvable."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
         else:
             departement = getattr(user, 'departement_gere', None)
-            if not departement:
+            if not departement and not simulation:
                 return Response(
                     {'detail': "Aucun departement associe a votre compte."},
                     status=status.HTTP_400_BAD_REQUEST,
@@ -582,7 +587,7 @@ class EmailWhitelistViewSet(viewsets.ModelViewSet):
 
         roles_valides = {choix[0] for choix in EmailWhitelist.ROLE_CHOICES}
 
-        if est_simulation(request):
+        if simulation:
             apercu = PreviewReport()
             defaut = (request.data.get('role_defaut') or 'ENSEIGNANT').strip().upper()
             for line, values in rows:

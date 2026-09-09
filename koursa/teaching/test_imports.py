@@ -830,3 +830,38 @@ class TestSimulationAutresEntites:
         assert res.status_code == status.HTTP_200_OK
         assert res.data['created'] == 1
         assert UniteEnseignement.objects.get(code_ue='INF3111').niveaux.first().nom_niveau == 'L3'
+
+
+@pytest.mark.django_db
+class TestSimulationSansPrerequis:
+    """Une simulation n'ecrit rien : elle ne doit rien exiger non plus."""
+
+    def test_whitelist_simulable_sans_departement(self, api, admin_user):
+        c = auth_client(api, admin_user)
+        res = c.post('/api/users/whitelist/import/', {
+            'file': classeur(['Email', 'Role'], [['a@test.cm', 'ENSEIGNANT']]),
+            'dry_run': '1',
+        }, format='multipart')
+
+        assert res.status_code == status.HTTP_200_OK
+        assert res.data['lignes'][0]['statut'] == 'ok'
+
+    def test_whitelist_exige_le_departement_a_l_ecriture(self, api, admin_user):
+        c = auth_client(api, admin_user)
+        res = c.post('/api/users/whitelist/import/', {
+            'rows': [{'valeurs': {'email': 'a@test.cm'}}],
+        }, format='json')
+
+        assert res.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'departement' in res.data['detail']
+
+    def test_ues_simulables_sans_filiere(self, api, admin_user, annee_active):
+        """Sans filiere, les UEs restent creables : seuls les niveaux ne suivront pas."""
+        c = auth_client(api, admin_user)
+        res = c.post('/api/teaching/unites-enseignement/import/', {
+            'file': classeur(['code', 'libelle', 'semestre'], [['INF3111', 'Compilation', 1]]),
+            'dry_run': '1',
+        }, format='multipart')
+
+        assert res.status_code == status.HTTP_200_OK
+        assert res.data['lignes'][0]['statut'] == 'ok'
