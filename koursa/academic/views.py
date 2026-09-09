@@ -173,42 +173,13 @@ class SalleViewSet(viewsets.ModelViewSet):
         return Response({'deleted': count}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['post'], url_path='import',
-            parser_classes=[MultiPartParser, FormParser])
+            parser_classes=[MultiPartParser, FormParser, JSONParser],
+            permission_classes=[IsSuperAdmin])
     def import_salles(self, request):
-        """Importer des salles depuis un fichier Excel (.xlsx)."""
-        import openpyxl
-
-        file = request.FILES.get('file')
-        if not file:
-            return Response({'detail': 'Aucun fichier fourni.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            wb = openpyxl.load_workbook(file, read_only=True)
-            ws = wb.active
-        except Exception:
-            return Response({'detail': 'Fichier Excel invalide.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        created = 0
-        skipped = 0
-        errors = []
-
-        for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-            nom = row[0] if row else None
-            if not nom or not str(nom).strip():
-                continue
-            nom = str(nom).strip()
-            _, was_created = Salle.objects.get_or_create(nom_salle=nom)
-            if was_created:
-                created += 1
-            else:
-                skipped += 1
-
-        logger.info(f'Import salles par {request.user.email}: {created} creees, {skipped} existantes')
-        return Response({
-            'created': created,
-            'skipped': skipped,
-            'errors': errors,
-        }, status=status.HTTP_200_OK)
+        """Importer des salles. Colonne : `nom_salle`. Aucun rattachement."""
+        return importer_hierarchique(
+            request, Salle, 'nom_salle', 'nom_salle',
+        )
 
 
 class AnneeAcademiqueViewSet(viewsets.ModelViewSet):

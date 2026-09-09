@@ -4,13 +4,23 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.throttling import AnonRateThrottle
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django.conf import settings
 from django.db import transaction
-from common.import_utils import ExcelInvalide, ImportReport, read_sheet
+from common.import_utils import (
+    STATUT_DOUBLON,
+    STATUT_ERREUR,
+    STATUT_OK,
+    ExcelInvalide,
+    ImportReport,
+    PreviewReport,
+    est_simulation,
+    parse_rows,
+    read_sheet,
+)
 import firebase_admin
 from firebase_admin import auth as firebase_auth
 from .models import Utilisateur, Role, StatutCompte, AuthProvider, EmailWhitelist
@@ -215,7 +225,7 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         return Response({"detail": "Mot de passe modifié avec succès."}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['post'], permission_classes=[IsSuperAdmin],
-            parser_classes=[MultiPartParser, FormParser], url_path='import-enseignants')
+            parser_classes=[MultiPartParser, FormParser, JSONParser], url_path='import-enseignants')
     def import_enseignants(self, request):
         """
         Creer des comptes enseignants depuis un fichier Excel.
@@ -227,14 +237,29 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         Le mot de passe initial est l'adresse email elle-meme, afin que les
         enseignants puissent se connecter sans echange prealable.
         """
-        file = request.FILES.get('file')
-        if not file:
-            return Response({'detail': 'Aucun fichier fourni.'}, status=status.HTTP_400_BAD_REQUEST)
-
         try:
-            rows = read_sheet(file, required=['email'])
+            rows = parse_rows(request, required=['email'])
         except ExcelInvalide as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Simulation : on decrit les comptes qui seraient crees, sans rien ecrire.
+        if est_simulation(request):
+            apercu = PreviewReport()
+            for line, values in rows:
+                email = (values.get('email') or '').strip().lower()
+                if not email:
+                    continue
+                valeurs = {'email': email, 'nom_complet': (values.get('nom_complet') or '').strip()}
+                if '@' not in email:
+                    apercu.ajouter(line, valeurs, statut=STATUT_ERREUR,
+                                   message=f"Adresse email invalide : {email}")
+                elif Utilisateur.objects.filter(email__iexact=email).exists():
+                    apercu.ajouter(line, valeurs, statut=STATUT_DOUBLON,
+                                   message="Compte deja existant, il ne sera pas modifie")
+                else:
+                    apercu.ajouter(line, valeurs, statut=STATUT_OK,
+                                   message="Mot de passe initial : son adresse email")
+            return Response(apercu.as_dict(), status=status.HTTP_200_OK)
 
         role_enseignant, _ = Role.objects.get_or_create(nom_role=Role.ENSEIGNANT)
         report = ImportReport()
@@ -516,7 +541,8 @@ class EmailWhitelistViewSet(viewsets.ModelViewSet):
         logger.warning(f'Whitelist videe ({count} emails) par {request.user.email}')
         return Response({'deleted': count}, status=status.HTTP_200_OK)
 
-    @action(detail=False, methods=['post'], parser_classes=[MultiPartParser, FormParser],
+    @action(detail=False, methods=['post'],
+            parser_classes=[MultiPartParser, FormParser, JSONParser],
             url_path='import')
     def import_whitelist(self, request):
         """
@@ -526,10 +552,6 @@ class EmailWhitelistViewSet(viewsets.ModelViewSet):
         (optionnels). Le departement est pris du parametre `departement`, ou
         force a celui du chef de departement connecte.
         """
-        file = request.FILES.get('file')
-        if not file:
-            return Response({'detail': 'Aucun fichier fourni.'}, status=status.HTTP_400_BAD_REQUEST)
-
         user = request.user
         est_admin = user.roles.filter(nom_role=Role.SUPER_ADMIN).exists() or user.is_superuser
         if est_admin:
@@ -554,11 +576,32 @@ class EmailWhitelistViewSet(viewsets.ModelViewSet):
                 )
 
         try:
-            rows = read_sheet(file, required=['email'])
+            rows = parse_rows(request, required=['email'])
         except ExcelInvalide as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         roles_valides = {choix[0] for choix in EmailWhitelist.ROLE_CHOICES}
+
+        if est_simulation(request):
+            apercu = PreviewReport()
+            defaut = (request.data.get('role_defaut') or 'ENSEIGNANT').strip().upper()
+            for line, values in rows:
+                email = (values.get('email') or '').strip().lower()
+                if not email:
+                    continue
+                role = (values.get('role') or defaut).strip().upper()
+                valeurs = {'email': email, 'role': role}
+                if '@' not in email:
+                    apercu.ajouter(line, valeurs, statut=STATUT_ERREUR,
+                                   message=f"Adresse email invalide : {email}")
+                elif role not in roles_valides:
+                    apercu.ajouter(line, valeurs, statut=STATUT_ERREUR,
+                                   message=f"Role inconnu : {role}")
+                elif EmailWhitelist.objects.filter(email=email).exists():
+                    apercu.ajouter(line, valeurs, statut=STATUT_DOUBLON, message="Deja autorise")
+                else:
+                    apercu.ajouter(line, valeurs, statut=STATUT_OK)
+            return Response(apercu.as_dict(), status=status.HTTP_200_OK)
         # Rôle applique aux lignes dont la colonne `role` est absente ou vide.
         role_defaut = (request.data.get('role_defaut') or 'ENSEIGNANT').strip().upper()
         report = ImportReport()

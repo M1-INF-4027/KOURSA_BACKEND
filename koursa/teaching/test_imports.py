@@ -751,3 +751,82 @@ class TestSimulationHierarchique:
             'rows': [{'valeurs': {'filiere': 'X'}, 'parent_id': structure['departement'].id}],
         }, format='json')
         assert res.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.django_db
+class TestSimulationAutresEntites:
+
+    def test_simulation_enseignants_n_ecrit_rien(self, api, admin_user):
+        avant = Utilisateur.objects.count()
+        c = auth_client(api, admin_user)
+        res = c.post('/api/users/utilisateurs/import-enseignants/', {
+            'file': classeur(['email', 'nom_complet'], [['neuf@test.cm', 'Jean Neuf']]),
+            'dry_run': '1',
+        }, format='multipart')
+
+        assert res.status_code == status.HTTP_200_OK
+        assert Utilisateur.objects.count() == avant
+        assert res.data['lignes'][0]['statut'] == 'ok'
+
+    def test_simulation_enseignant_existant_signale(self, api, admin_user, enseignant_user):
+        c = auth_client(api, admin_user)
+        res = c.post('/api/users/utilisateurs/import-enseignants/', {
+            'file': classeur(['email'], [[enseignant_user.email]]),
+            'dry_run': '1',
+        }, format='multipart')
+        assert res.data['lignes'][0]['statut'] == 'doublon'
+
+    def test_simulation_salles(self, api, admin_user):
+        from academic.models import Salle
+
+        c = auth_client(api, admin_user)
+        res = c.post('/api/academic/salles/import/', {
+            'file': classeur(['nom_salle'], [['A100'], ['B200']]),
+            'dry_run': '1',
+        }, format='multipart')
+
+        assert res.data['total'] == 2
+        assert Salle.objects.count() == 0
+
+    def test_simulation_ues_annonce_le_niveau(self, api, admin_user, annee_active, structure):
+        from teaching.models import UniteEnseignement
+
+        c = auth_client(api, admin_user)
+        res = c.post('/api/teaching/unites-enseignement/import/', {
+            'file': classeur(['code', 'libelle', 'semestre'], [['INF3111', 'Compilation', 1]]),
+            'filiere': structure['filiere'].id,
+            'dry_run': '1',
+        }, format='multipart')
+
+        ligne = res.data['lignes'][0]
+        assert ligne['valeurs']['niveau'] == 'L3'
+        assert ligne['parent']['libelle'] == 'Semestre 1'
+        assert UniteEnseignement.objects.count() == 0
+
+    def test_simulation_affectation_enseignant_absent(self, api, admin_user, annee_active, structure):
+        from teaching.models import UniteEnseignement
+
+        UniteEnseignement.objects.create(
+            code_ue='INF3111', libelle_ue='Compilation',
+            semestre=1, semestre_obj=annee_active['s1'],
+        )
+        c = auth_client(api, admin_user)
+        res = c.post('/api/teaching/unites-enseignement/import-affectations/', {
+            'file': classeur(['code_ue', 'enseignant_email'], [['INF3111', 'absent@test.cm']]),
+            'dry_run': '1',
+        }, format='multipart')
+
+        assert res.data['lignes'][0]['statut'] == 'parent_absent'
+
+    def test_validation_ues_par_lignes_json(self, api, admin_user, annee_active, structure):
+        from teaching.models import UniteEnseignement
+
+        c = auth_client(api, admin_user)
+        res = c.post('/api/teaching/unites-enseignement/import/', {
+            'rows': [{'valeurs': {'code': 'INF3111', 'libelle': 'Compilation', 'semestre': '1'}}],
+            'filiere': structure['filiere'].id,
+        }, format='json')
+
+        assert res.status_code == status.HTTP_200_OK
+        assert res.data['created'] == 1
+        assert UniteEnseignement.objects.get(code_ue='INF3111').niveaux.first().nom_niveau == 'L3'

@@ -2,15 +2,22 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.http import FileResponse
 from django.utils import timezone
 from django.db import transaction
 from django.db.models import Q
 from common.import_utils import (
+    STATUT_DOUBLON,
+    STATUT_ERREUR,
+    STATUT_OK,
+    STATUT_PARENT_ABSENT,
     ExcelInvalide,
     ImportReport,
+    PreviewReport,
     detect_niveau_from_code,
+    est_simulation,
+    parse_rows,
     read_sheet,
 )
 from users.models import Role
@@ -124,7 +131,7 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
             for n in Niveau.objects.filter(filiere_id=filiere_id)
         }
 
-    @action(detail=False, methods=['post'], parser_classes=[MultiPartParser, FormParser],
+    @action(detail=False, methods=['post'], parser_classes=[MultiPartParser, FormParser, JSONParser],
             url_path='import')
     def import_ues(self, request):
         """
@@ -142,12 +149,8 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
         if not (IsSuperAdmin().has_permission(request, self) or IsHoD().has_permission(request, self)):
             return Response({'detail': 'Acces refuse.'}, status=status.HTTP_403_FORBIDDEN)
 
-        file = request.FILES.get('file')
-        if not file:
-            return Response({'detail': 'Aucun fichier fourni.'}, status=status.HTTP_400_BAD_REQUEST)
-
         try:
-            rows = read_sheet(file, required=['code'])
+            rows = parse_rows(request, required=['code'])
         except ExcelInvalide as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -169,6 +172,48 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
 
             ids = [p.strip() for p in str(brut).split(',') if p.strip().isdigit()]
             niveaux_imposes = list(Niveau.objects.filter(pk__in=ids))
+
+        # Simulation : on annonce le semestre et le niveau qui seraient retenus.
+        if est_simulation(request):
+            apercu = PreviewReport()
+            for line, values in rows:
+                code = (values.get('code') or '').strip().upper()
+                if not code:
+                    continue
+                libelle = (values.get('libelle') or '').strip() or code
+                numero_brut = (values.get('semestre') or '').strip() or str(semestre_defaut or '')
+                valeurs = {'code': code, 'libelle': libelle, 'semestre': numero_brut}
+
+                try:
+                    numero = int(float(numero_brut))
+                except (TypeError, ValueError):
+                    apercu.ajouter(line, valeurs, statut=STATUT_ERREUR,
+                                   message="Semestre illisible : '%s'" % numero_brut)
+                    continue
+                semestre_obj = semestres.get(numero)
+                if not semestre_obj:
+                    apercu.ajouter(line, valeurs, statut=STATUT_ERREUR,
+                                   message='Semestre %s inexistant pour %s' % (numero, annee.libelle))
+                    continue
+
+                nom_niveau = (values.get('niveau') or '').strip().upper() or (
+                    detect_niveau_from_code(code) or ''
+                )
+                valeurs['niveau'] = nom_niveau
+                existe = UniteEnseignement.objects.filter(
+                    code_ue=code, semestre_obj=semestre_obj
+                ).exists()
+                message = None
+                if nom_niveau and niveaux and nom_niveau not in niveaux:
+                    message = 'Niveau %s absent de la filiere choisie' % nom_niveau
+                apercu.ajouter(
+                    line, valeurs,
+                    parent={'champ': 'semestre', 'id': semestre_obj.pk,
+                            'libelle': 'Semestre %s' % numero},
+                    statut=STATUT_DOUBLON if existe else STATUT_OK,
+                    message='Sera mise a jour' if existe else message,
+                )
+            return Response(apercu.as_dict(), status=status.HTTP_200_OK)
 
         report = ImportReport()
 
@@ -257,7 +302,7 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
                 return trouve
         return None
 
-    @action(detail=False, methods=['post'], parser_classes=[MultiPartParser, FormParser],
+    @action(detail=False, methods=['post'], parser_classes=[MultiPartParser, FormParser, JSONParser],
             url_path='import-affectations')
     def import_affectations(self, request):
         """
@@ -273,17 +318,54 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
         if not (IsSuperAdmin().has_permission(request, self) or IsHoD().has_permission(request, self)):
             return Response({'detail': 'Acces refuse.'}, status=status.HTTP_403_FORBIDDEN)
 
-        file = request.FILES.get('file')
-        if not file:
-            return Response({'detail': 'Aucun fichier fourni.'}, status=status.HTTP_400_BAD_REQUEST)
-
         try:
-            rows = read_sheet(file, required=['code'])
+            rows = parse_rows(request, required=['code'])
         except ExcelInvalide as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         semestres, annee = self._resolve_semestres(request.data.get('annee_academique'))
         niveaux = self._resolve_niveaux(request.data.get('filiere'))
+
+        # Simulation : on montre quel enseignant serait rattache a quelle UE.
+        if est_simulation(request):
+            apercu = PreviewReport()
+            for line, values in rows:
+                code = (values.get('code') or '').strip().upper()
+                if not code:
+                    continue
+                identite = values.get('enseignant_email') or values.get('enseignant') or ''
+                valeurs = {'code': code,
+                           'enseignant_email': values.get('enseignant_email', ''),
+                           'enseignant': values.get('enseignant', '')}
+
+                ue = UniteEnseignement.objects.filter(code_ue__iexact=code).first()
+                if not ue:
+                    apercu.ajouter(line, valeurs, statut=STATUT_ERREUR,
+                                   message="UE introuvable : %s. Importez d'abord les UEs." % code)
+                    continue
+
+                enseignant = self._match_enseignant(
+                    values.get('enseignant_email'), values.get('enseignant')
+                )
+                if not enseignant:
+                    apercu.ajouter(
+                        line, valeurs,
+                        parent={'champ': 'enseignant', 'id': None, 'libelle': identite},
+                        statut=STATUT_PARENT_ABSENT,
+                        message='Enseignant introuvable : %s' % identite,
+                    )
+                    continue
+
+                deja = ue.enseignants.filter(pk=enseignant.pk).exists()
+                apercu.ajouter(
+                    line, valeurs,
+                    parent={'champ': 'enseignant', 'id': enseignant.pk,
+                            'libelle': enseignant.email},
+                    statut=STATUT_DOUBLON if deja else STATUT_OK,
+                    message='Deja rattache' if deja else None,
+                )
+            return Response(apercu.as_dict(), status=status.HTTP_200_OK)
+
         report = ImportReport()
 
         with transaction.atomic():
