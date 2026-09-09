@@ -36,9 +36,12 @@ class UtilisateurSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'email', 'first_name', 'last_name', 'password',
             'statut', 'auth_provider', 'roles', 'roles_ids', 'niveau_represente', 'fcm_token',
-            'is_superuser', 'is_staff', 'nom_departement'
+            'is_superuser', 'is_staff', 'nom_departement', 'doit_changer_mot_de_passe'
         ]
-        read_only_fields = ['statut', 'auth_provider', 'is_superuser', 'is_staff']
+        read_only_fields = [
+            'statut', 'auth_provider', 'is_superuser', 'is_staff',
+            'doit_changer_mot_de_passe',
+        ]
 
     def get_nom_departement(self, obj):
         dept = getattr(obj, 'departement_gere', None)

@@ -72,6 +72,13 @@ class Utilisateur(AbstractUser):
         null=True,
         verbose_name="Token de l'appareil pour les notifs"
     )
+
+    # Positionne a la creation d'un compte par import : le mot de passe initial
+    # etant l'adresse email, il doit etre change des la premiere connexion.
+    doit_changer_mot_de_passe = models.BooleanField(
+        default=False,
+        verbose_name="Doit changer son mot de passe"
+    )
     
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['first_name', 'last_name']

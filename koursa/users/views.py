@@ -201,7 +201,16 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         if not request.user.check_password(serializer.validated_data['old_password']):
             return Response({"detail": "Ancien mot de passe incorrect."}, status=status.HTTP_403_FORBIDDEN)
 
-        request.user.set_password(serializer.validated_data['new_password'])
+        nouveau = serializer.validated_data['new_password']
+        if request.user.email.lower() == nouveau.lower():
+            return Response(
+                {"detail": "Le mot de passe ne peut pas etre votre adresse email."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        request.user.set_password(nouveau)
+        # L'obligation imposee aux comptes crees par import est levee.
+        request.user.doit_changer_mot_de_passe = False
         request.user.save()
         return Response({"detail": "Mot de passe modifié avec succès."}, status=status.HTTP_200_OK)
 
@@ -262,6 +271,9 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
                     last_name=last_name,
                     statut=StatutCompte.ACTIF,
                     auth_provider=AuthProvider.PASSWORD,
+                    # Le mot de passe initial est l'adresse email, connue de tous :
+                    # le changement est exige des la premiere connexion.
+                    doit_changer_mot_de_passe=True,
                 )
                 user.set_password(email)
                 user.save()

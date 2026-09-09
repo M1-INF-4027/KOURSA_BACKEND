@@ -487,3 +487,62 @@ class TestImportStructure:
         fichier = classeur(['faculte', 'departement', 'filiere'], [['F', 'D', 'X']])
         res = c.post(self.URL, {'file': fichier}, format='multipart')
         assert res.status_code == status.HTTP_403_FORBIDDEN
+
+
+# ═══════════════════════════════════════════════════════
+#  Changement de mot de passe impose
+# ═══════════════════════════════════════════════════════
+
+@pytest.mark.django_db
+class TestChangementImpose:
+
+    IMPORT = '/api/users/utilisateurs/import-enseignants/'
+    CHANGE = '/api/users/utilisateurs/change-password/'
+
+    def _importer(self, api, admin_user, email):
+        c = auth_client(api, admin_user)
+        c.post(self.IMPORT, {'file': classeur(['email'], [[email]])}, format='multipart')
+        return Utilisateur.objects.get(email=email)
+
+    def test_drapeau_pose_a_l_import(self, api, admin_user):
+        user = self._importer(api, admin_user, 'importe@test.cm')
+        assert user.doit_changer_mot_de_passe is True
+
+    def test_compte_ordinaire_non_concerne(self, enseignant_user):
+        """Un compte cree normalement ne subit pas l'obligation."""
+        assert enseignant_user.doit_changer_mot_de_passe is False
+
+    def test_changement_leve_l_obligation(self, api, admin_user):
+        user = self._importer(api, admin_user, 'importe@test.cm')
+        c = auth_client(api, user)
+        res = c.post(self.CHANGE, {
+            'old_password': 'importe@test.cm',
+            'new_password': 'MotDePasseSolide!42',
+        }, format='json')
+
+        assert res.status_code == status.HTTP_200_OK
+        user.refresh_from_db()
+        assert user.doit_changer_mot_de_passe is False
+        assert user.check_password('MotDePasseSolide!42')
+
+    def test_refus_de_reprendre_son_email(self, api, admin_user):
+        """Interdit de « changer » pour la valeur provisoire deja connue."""
+        user = self._importer(api, admin_user, 'importe@test.cm')
+        c = auth_client(api, user)
+        res = c.post(self.CHANGE, {
+            'old_password': 'importe@test.cm',
+            'new_password': 'importe@test.cm',
+        }, format='json')
+
+        assert res.status_code == status.HTTP_400_BAD_REQUEST
+        user.refresh_from_db()
+        assert user.doit_changer_mot_de_passe is True
+
+    def test_drapeau_expose_au_client(self, api, admin_user):
+        """L'interface s'appuie sur ce champ pour rediriger l'utilisateur."""
+        user = self._importer(api, admin_user, 'importe@test.cm')
+        c = auth_client(api, user)
+        res = c.get('/api/users/utilisateurs/me/')
+
+        assert res.status_code == status.HTTP_200_OK
+        assert res.data['doit_changer_mot_de_passe'] is True
