@@ -36,7 +36,14 @@ from notifications.models import NotificationType
 logger = logging.getLogger('koursa')
 
 class UtilisateurViewSet(viewsets.ModelViewSet):
-    queryset = Utilisateur.objects.all().prefetch_related('roles')
+    # Les champs `classe` et `enseignements` du serializer traversent le niveau,
+    # la filiere, le departement et les UEs : sans ces jointures, afficher la
+    # liste des utilisateurs declencherait une requete par ligne.
+    queryset = Utilisateur.objects.all().prefetch_related(
+        'roles', 'ues_enseignees__niveaux'
+    ).select_related(
+        'niveau_represente__filiere__departement'
+    )
     serializer_class = UtilisateurSerializer
     permission_classes = [IsAdminOrIsSelf]
 

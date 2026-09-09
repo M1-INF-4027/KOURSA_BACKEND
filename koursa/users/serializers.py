@@ -30,18 +30,64 @@ class UtilisateurSerializer(serializers.ModelSerializer):
 
     password = serializers.CharField(write_only=True, required=False)
     nom_departement = serializers.SerializerMethodField()
+    # Le niveau represente n'etait expose que par son identifiant : impossible,
+    # pour un chef examinant une demande, de savoir de quelle classe releve le
+    # delegue. On renvoie la chaine complete, en lecture seule.
+    classe = serializers.SerializerMethodField()
+    enseignements = serializers.SerializerMethodField()
 
     class Meta:
         model = Utilisateur
         fields = [
             'id', 'email', 'first_name', 'last_name', 'password',
             'statut', 'auth_provider', 'roles', 'roles_ids', 'niveau_represente', 'fcm_token',
-            'is_superuser', 'is_staff', 'nom_departement', 'doit_changer_mot_de_passe'
+            'is_superuser', 'is_staff', 'nom_departement', 'doit_changer_mot_de_passe',
+            'classe', 'enseignements'
         ]
         read_only_fields = [
             'statut', 'auth_provider', 'is_superuser', 'is_staff',
             'doit_changer_mot_de_passe',
         ]
+
+    def get_classe(self, obj):
+        """Chaine complete du niveau represente par un delegue."""
+        niveau = obj.niveau_represente
+        if not niveau:
+            return None
+        filiere = niveau.filiere
+        departement = filiere.departement if filiere else None
+        return {
+            'niveau_id': niveau.id,
+            'niveau': niveau.nom_niveau,
+            'filiere_id': filiere.id if filiere else None,
+            'filiere': filiere.nom_filiere if filiere else None,
+            'departement_id': departement.id if departement else None,
+            'departement': departement.nom_departement if departement else None,
+            'libelle': ' > '.join(
+                p for p in [
+                    departement.nom_departement if departement else None,
+                    filiere.nom_filiere if filiere else None,
+                    niveau.nom_niveau,
+                ] if p
+            ),
+        }
+
+    def get_enseignements(self, obj):
+        """UEs enseignees et niveaux couverts, pour examiner un enseignant."""
+        if not obj.roles.filter(nom_role=Role.ENSEIGNANT).exists():
+            return None
+        ues = obj.ues_enseignees.all()
+        niveaux = sorted({
+            n.nom_niveau for ue in ues for n in ue.niveaux.all()
+        })
+        return {
+            'nombre_ues': len(ues),
+            'ues': [
+                {'id': ue.id, 'code': ue.code_ue, 'libelle': ue.libelle_ue}
+                for ue in ues[:20]
+            ],
+            'niveaux': niveaux,
+        }
 
     def get_nom_departement(self, obj):
         dept = getattr(obj, 'departement_gere', None)

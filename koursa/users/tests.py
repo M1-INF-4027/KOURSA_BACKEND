@@ -201,3 +201,69 @@ class TestResetDatabase:
         c = auth_client(api, enseignant_user)
         res = c.post('/api/users/utilisateurs/reset-database/', {'password': 'TestPass123!'})
         assert res.status_code == status.HTTP_403_FORBIDDEN
+
+
+# ═══════════════════════════════════════════════════════
+#  Detail d'un delegue et d'un enseignant
+# ═══════════════════════════════════════════════════════
+
+@pytest.mark.django_db
+class TestDetailUtilisateur:
+    """Un chef examinant une demande doit savoir de quelle classe releve le delegue."""
+
+    def test_classe_du_delegue_exposee(self, api, admin_user, delegue_user, structure):
+        from conftest import auth_client
+
+        c = auth_client(api, admin_user)
+        res = c.get(f'/api/users/utilisateurs/{delegue_user.id}/')
+
+        assert res.status_code == 200
+        classe = res.data['classe']
+        assert classe is not None, "le delegue doit porter sa classe"
+        assert classe['niveau'] == delegue_user.niveau_represente.nom_niveau
+        assert classe['filiere'] == structure['filiere'].nom_filiere
+        assert classe['departement'] == structure['departement'].nom_departement
+        assert '>' in classe['libelle']
+
+    def test_classe_absente_pour_les_autres_roles(self, api, admin_user, enseignant_user):
+        from conftest import auth_client
+
+        c = auth_client(api, admin_user)
+        res = c.get(f'/api/users/utilisateurs/{enseignant_user.id}/')
+        assert res.data['classe'] is None
+
+    def test_enseignements_exposes(self, api, admin_user, enseignant_user, annee_active, structure):
+        from conftest import auth_client
+        from teaching.models import UniteEnseignement
+
+        ue = UniteEnseignement.objects.create(
+            code_ue='INF3111', libelle_ue='Compilation',
+            semestre=1, semestre_obj=annee_active['s1'],
+        )
+        ue.enseignants.add(enseignant_user)
+        ue.niveaux.add(structure['niveaux']['L3'])
+
+        c = auth_client(api, admin_user)
+        res = c.get(f'/api/users/utilisateurs/{enseignant_user.id}/')
+
+        ens = res.data['enseignements']
+        assert ens['nombre_ues'] == 1
+        assert ens['ues'][0]['code'] == 'INF3111'
+        assert ens['niveaux'] == ['L3']
+
+    def test_chef_peut_changer_la_classe_de_son_delegue(
+        self, api, chef_user, delegue_user, structure
+    ):
+        from conftest import auth_client
+
+        cible = structure['niveaux']['M1']
+        c = auth_client(api, chef_user)
+        res = c.patch(
+            f'/api/users/utilisateurs/{delegue_user.id}/',
+            {'niveau_represente': cible.id}, format='json',
+        )
+
+        assert res.status_code == 200, res.data
+        delegue_user.refresh_from_db()
+        assert delegue_user.niveau_represente == cible
+        assert res.data['classe']['niveau'] == 'M1'
