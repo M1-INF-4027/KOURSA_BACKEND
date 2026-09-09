@@ -163,6 +163,18 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
         niveaux = self._resolve_niveaux(request.data.get('filiere'))
         semestre_defaut = request.data.get('semestre')
 
+        # Le fichier d'affectations partage la colonne `code` avec celui des
+        # UEs, mais nomme ses enseignants au lieu des intitules. Importe ici,
+        # il creait des UEs baptisees d'apres leur propre code.
+        if rows and not any((v.get('libelle') or '').strip() for _, v in rows):
+            if any(v.get('enseignant') or v.get('enseignant_email') for _, v in rows):
+                return Response(
+                    {'detail': "Ce fichier nomme des enseignants et ne porte aucun "
+                               "libelle : c'est un fichier d'affectations. Choisissez "
+                               "« Affectation des enseignants » pour l'importer."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         # Niveaux imposes a toutes les lignes, en complement de ceux deduits
         # ligne par ligne (selection manuelle depuis l'interface).
         niveaux_imposes = []
@@ -180,9 +192,13 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
                 code = (values.get('code') or '').strip().upper()
                 if not code:
                     continue
-                libelle = (values.get('libelle') or '').strip() or code
+                libelle = (values.get('libelle') or '').strip()
                 numero_brut = (values.get('semestre') or '').strip() or str(semestre_defaut or '')
                 valeurs = {'code': code, 'libelle': libelle, 'semestre': numero_brut}
+                if not libelle:
+                    apercu.ajouter(line, valeurs, statut=STATUT_ERREUR,
+                                   message='Libelle absent pour %s' % code)
+                    continue
 
                 try:
                     numero = int(float(numero_brut))
@@ -222,7 +238,10 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
                 code = (values.get('code') or '').strip().upper()
                 if not code:
                     continue
-                libelle = (values.get('libelle') or '').strip() or code
+                libelle = (values.get('libelle') or '').strip()
+                if not libelle:
+                    report.error(line, f'Libelle absent pour {code}.')
+                    continue
 
                 # Semestre : colonne du fichier, sinon valeur par defaut du formulaire.
                 numero_brut = (values.get('semestre') or '').strip() or str(semestre_defaut or '')
@@ -271,6 +290,25 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
             f'{report.created} creees, {report.updated} mises a jour'
         )
         return Response(report.as_dict(), status=status.HTTP_200_OK)
+
+    def _enseignant_retenu(self, valeurs):
+        """
+        Enseignant a rattacher : le choix de l'administrateur d'abord.
+
+        L'apercu renvoie `parent_id` quand une ligne a ete arbitree a la main
+        (email absent du fichier, homonyme, erreur de saisie). Le rededuire du
+        fichier reviendrait a defaire ce choix en silence.
+        """
+        from users.models import Utilisateur
+
+        choisi = valeurs.get('parent_id')
+        if choisi:
+            enseignant = Utilisateur.objects.filter(pk=choisi).first()
+            if enseignant:
+                return enseignant
+        return self._match_enseignant(
+            valeurs.get('enseignant_email'), valeurs.get('enseignant')
+        )
 
     def _match_enseignant(self, email, nom):
         """
@@ -344,9 +382,7 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
                                    message="UE introuvable : %s. Importez d'abord les UEs." % code)
                     continue
 
-                enseignant = self._match_enseignant(
-                    values.get('enseignant_email'), values.get('enseignant')
-                )
+                enseignant = self._enseignant_retenu(values)
                 if not enseignant:
                     apercu.ajouter(
                         line, valeurs,
@@ -389,9 +425,7 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
                     report.error(line, f"UE introuvable : {code}. Importez d'abord les UEs.")
                     continue
 
-                enseignant = self._match_enseignant(
-                    values.get('enseignant_email'), values.get('enseignant')
-                )
+                enseignant = self._enseignant_retenu(values)
                 if not enseignant:
                     identite = values.get('enseignant_email') or values.get('enseignant') or '?'
                     report.error(

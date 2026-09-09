@@ -865,3 +865,113 @@ class TestSimulationSansPrerequis:
 
         assert res.status_code == status.HTTP_200_OK
         assert res.data['lignes'][0]['statut'] == 'ok'
+
+
+@pytest.mark.django_db
+class TestValidationJsonEnseignants:
+    """Le chemin emprunte par l'apercu : lignes JSON, sans fichier."""
+
+    URL = '/api/users/utilisateurs/import-enseignants/'
+
+    def test_lignes_json_acceptees(self, api, admin_user):
+        c = auth_client(api, admin_user)
+        res = c.post(self.URL, {
+            'rows': [
+                {'ligne': 2, 'valeurs': {'email': 'a@test.cm', 'nom_complet': 'Jean Test'}},
+                {'ligne': 3, 'valeurs': {'email': 'b@test.cm', 'nom_complet': 'Paul Test'}},
+            ],
+        }, format='json')
+
+        assert res.status_code == status.HTTP_200_OK, res.data
+        assert res.data['created'] == 2
+        assert Utilisateur.objects.filter(email='a@test.cm').exists()
+
+    def test_lignes_json_avec_doublons_transmis(self, api, admin_user, enseignant_user):
+        """L'apercu transmet aussi les doublons : ils doivent etre ignores, pas rejetes."""
+        c = auth_client(api, admin_user)
+        res = c.post(self.URL, {
+            'rows': [
+                {'valeurs': {'email': enseignant_user.email}},
+                {'valeurs': {'email': 'neuf@test.cm'}},
+            ],
+        }, format='json')
+
+        assert res.status_code == status.HTTP_200_OK, res.data
+        assert res.data['created'] == 1
+
+
+# ═══════════════════════════════════════════════════════
+#  Le bon fichier au bon endroit
+# ═══════════════════════════════════════════════════════
+
+class TestFichierDeplace:
+    """
+    Les fichiers d'UEs et d'affectations partagent la colonne du code. Depose
+    dans l'import des UEs, un fichier d'affectations y creait des unites
+    baptisees d'apres leur propre code, avec un enseignant par ligne repetee.
+    """
+
+    URL = '/api/teaching/unites-enseignement/import/'
+
+    def test_fichier_d_affectations_refuse(self, api, admin_user, annee_active, structure):
+        c = auth_client(api, admin_user)
+        res = c.post(self.URL, {
+            'file': classeur(['code_ue', 'enseignant_nom', 'enseignant_email', 'semestre'],
+                             [['INF1111', 'ATSA', 'atsa@test.cm', 1]]),
+            'filiere': structure['filiere'].id,
+            'dry_run': '1',
+        }, format='multipart')
+
+        assert res.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'affectations' in res.data['detail'].lower()
+        assert UniteEnseignement.objects.count() == 0
+
+    def test_libelle_absent_signale_et_non_invente(self, api, admin_user, annee_active, structure):
+        c = auth_client(api, admin_user)
+        res = c.post(self.URL, {
+            'file': classeur(['code', 'libelle', 'semestre'],
+                             [['INF3111', 'Compilation', 1], ['INF3112', '', 1]]),
+            'filiere': structure['filiere'].id,
+            'dry_run': '1',
+        }, format='multipart')
+
+        assert res.status_code == status.HTTP_200_OK
+        statuts = {l['valeurs']['code']: l['statut'] for l in res.data['lignes']}
+        assert statuts['INF3111'] == 'ok'
+        assert statuts['INF3112'] == 'erreur'
+
+    def test_ecriture_refuse_une_ue_sans_libelle(self, api, admin_user, annee_active, structure):
+        c = auth_client(api, admin_user)
+        res = c.post(self.URL, {
+            'file': classeur(['code', 'libelle', 'semestre'], [['INF3113', '', 1]]),
+            'filiere': structure['filiere'].id,
+        }, format='multipart')
+
+        assert res.data['created'] == 0
+        assert res.data['errors']
+        assert not UniteEnseignement.objects.filter(code_ue='INF3113').exists()
+
+
+class TestArbitrageEnseignant:
+    """L'enseignant choisi dans l'apercu doit primer sur celui du fichier."""
+
+    URL = '/api/teaching/unites-enseignement/import-affectations/'
+
+    def test_parent_id_prime_sur_le_fichier(self, api, admin_user, annee_active,
+                                            structure, enseignant_user):
+        ue = UniteEnseignement.objects.create(
+            code_ue='INF3111', libelle_ue='Compilation',
+            semestre=1, semestre_obj=annee_active['s1'],
+        )
+        c = auth_client(api, admin_user)
+        # Le fichier ne nomme personne ; l'administrateur a tranche dans l'apercu.
+        res = c.post(self.URL, {
+            'rows': [{
+                'ligne': 2,
+                'valeurs': {'code': 'INF3111', 'enseignant_email': '', 'enseignant': ''},
+                'parent_id': enseignant_user.id,
+            }],
+        }, format='json')
+
+        assert res.status_code == status.HTTP_200_OK
+        assert enseignant_user in ue.enseignants.all()
