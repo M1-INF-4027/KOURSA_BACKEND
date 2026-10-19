@@ -92,3 +92,30 @@ class Utilisateur(AbstractUser):
 
     def __str__(self):
         return self.get_full_name() or self.email
+
+    def mandat_actif(self):
+        """
+        Mandat de delegue approuve pour l'annee en cours, s'il existe.
+
+        C'est par lui que passe desormais la classe d'un delegue, et non plus
+        par niveau_represente seul : ce champ ne portait aucune annee, si bien
+        qu'au changement d'annee le delegue restait inscrit dans sa classe de
+        l'an passe sans que rien ne le signale.
+        """
+        from academic.models import AnneeAcademique, MandatDelegue, StatutMandat
+
+        annee = AnneeAcademique.objects.filter(est_active=True).first()
+        if not annee:
+            return None
+        return (
+            MandatDelegue.objects
+            .filter(utilisateur=self, annee_academique=annee,
+                    statut=StatutMandat.APPROUVE)
+            .select_related('niveau__filiere__departement', 'annee_academique')
+            .first()
+        )
+
+    def classe_actuelle(self):
+        """Niveau represente cette annee, ou None s'il reste a declarer."""
+        mandat = self.mandat_actif()
+        return mandat.niveau if mandat else None

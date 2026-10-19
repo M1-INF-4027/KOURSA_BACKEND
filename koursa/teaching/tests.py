@@ -59,6 +59,16 @@ class TestUE:
         assert 'INF111' in codes
 
     def test_delegue_sees_own_niveau_ues(self, api, delegue_user, ue, annee_active):
+        from academic.models import MandatDelegue, StatutMandat
+
+        # Les cours ne se montrent qu'a un delegue dont la classe est etablie
+        # pour l'annee en cours. Sans mandat, l'ancien filtre renvoyait les
+        # cours de la nouvelle annee mais du niveau quitte.
+        MandatDelegue.objects.create(
+            utilisateur=delegue_user, niveau=delegue_user.niveau_represente,
+            annee_academique=annee_active['annee'], statut=StatutMandat.APPROUVE,
+        )
+
         c = auth_client(api, delegue_user)
         res = c.get('/api/teaching/unites-enseignement/')
         assert res.status_code == status.HTTP_200_OK

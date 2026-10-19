@@ -211,8 +211,17 @@ class TestResetDatabase:
 class TestDetailUtilisateur:
     """Un chef examinant une demande doit savoir de quelle classe releve le delegue."""
 
-    def test_classe_du_delegue_exposee(self, api, admin_user, delegue_user, structure):
+    def test_classe_du_delegue_exposee(self, api, admin_user, delegue_user,
+                                       structure, annee_active):
         from conftest import auth_client
+        from academic.models import MandatDelegue, StatutMandat
+
+        # La classe est portee par le mandat de l'annee, non plus par un champ
+        # sans annee : sans mandat, il n'y a pas de classe a exposer.
+        MandatDelegue.objects.create(
+            utilisateur=delegue_user, niveau=delegue_user.niveau_represente,
+            annee_academique=annee_active['annee'], statut=StatutMandat.APPROUVE,
+        )
 
         c = auth_client(api, admin_user)
         res = c.get(f'/api/users/utilisateurs/{delegue_user.id}/')
@@ -252,10 +261,12 @@ class TestDetailUtilisateur:
         assert ens['niveaux'] == ['L3']
 
     def test_chef_peut_changer_la_classe_de_son_delegue(
-        self, api, chef_user, delegue_user, structure
+        self, api, chef_user, delegue_user, structure, annee_active
     ):
         from conftest import auth_client
 
+        # Une classe n'existe que dans une annee : la correction du chef vaut
+        # mandat approuve pour l'annee en cours.
         cible = structure['niveaux']['M1']
         c = auth_client(api, chef_user)
         res = c.patch(

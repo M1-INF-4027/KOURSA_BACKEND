@@ -81,8 +81,14 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
             ).distinct()
 
         if user.roles.filter(nom_role=Role.DELEGUE).exists():
-            if user.niveau_represente:
-                return qs.filter(niveaux=user.niveau_represente)
+            # La classe est lue sur le mandat de l'annee en cours. Le champ
+            # niveau_represente ne portait aucune annee : croise avec l'annee
+            # active, il renvoyait les cours de la nouvelle annee mais du
+            # niveau quitte, sans que rien ne le signale. Sans mandat, on ne
+            # renvoie rien — l'interface demande alors au delegue sa classe.
+            niveau = user.classe_actuelle()
+            if niveau:
+                return qs.filter(niveaux=niveau)
             return UniteEnseignement.objects.none()
 
         if user.roles.filter(nom_role=Role.ENSEIGNANT).exists():

@@ -12,6 +12,10 @@ class NotificationType(models.TextChoices):
     RAPPEL_ENSEIGNANT = 'RAPPEL_ENSEIGNANT', 'Rappel enseignant'
     RAPPEL_AUTO = 'RAPPEL_AUTO', 'Rappel automatique'
     RAPPEL_FICHE = 'RAPPEL_FICHE', 'Rappel fiche manquante'
+    # Mandat de delegue : la classe declaree pour l'annee en cours.
+    CLASSE_A_VALIDER = 'CLASSE_A_VALIDER', 'Classe a valider'
+    CLASSE_VALIDEE = 'CLASSE_VALIDEE', 'Classe validee'
+    CLASSE_REFUSEE = 'CLASSE_REFUSEE', 'Classe refusee'
 
 
 class Notification(models.Model):

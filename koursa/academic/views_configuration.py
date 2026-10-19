@@ -8,7 +8,7 @@ from datetime import date
 
 from .models import (
     AnneeAcademique, Semestre, Departement, Filiere, Niveau,
-    Faculte, HistoriqueChefDepartement, Salle,
+    Faculte, HistoriqueChefDepartement, Salle, MandatDelegue,
 )
 from .serializers import (
     AnneeAcademiqueSerializer,
@@ -225,6 +225,13 @@ class ReconduireAnneeView(APIView):
                     new_ue.enseignants.set(prev_ue.enseignants.all())
                     new_ue.niveaux.set(prev_ue.niveaux.all())
                     created_count += 1
+
+            # Clore les mandats de delegues de l'annee precedente. Ils ne
+            # sont pas reconduits : une classe reelit son delegue chaque
+            # annee, et chacun redeclarera la sienne a sa prochaine connexion.
+            MandatDelegue.objects.filter(
+                annee_academique=previous, date_fin__isnull=True
+            ).update(date_fin=date.today())
 
             # Reconduire les chefs
             for dept in Departement.objects.filter(chef_departement__isnull=False):

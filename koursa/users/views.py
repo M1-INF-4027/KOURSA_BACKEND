@@ -353,17 +353,196 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         except Niveau.DoesNotExist:
             return Response({"detail": "Niveau introuvable."}, status=status.HTTP_404_NOT_FOUND)
 
-        user.niveau_represente = niveau
-        user.save()
+        from academic.models import MandatDelegue, StatutMandat
+
+        # Une declaration n'est pas une affectation : elle attend l'approbation
+        # du chef, comme une inscription. Jusqu'ici un delegue se deplacait
+        # seul vers n'importe quelle filiere, sans aucun controle.
+        mandat, cree = MandatDelegue.objects.update_or_create(
+            utilisateur=user,
+            annee_academique=annee_active,
+            defaults={
+                'niveau': niveau,
+                'statut': StatutMandat.EN_ATTENTE,
+                'motif_refus': '',
+                'approuve_par': None,
+            },
+        )
+
+        # Prevenir le chef du departement concerne, s'il y en a un.
+        departement = niveau.filiere.departement if niveau.filiere else None
+        chef = getattr(departement, 'chef_departement', None) if departement else None
+        if chef:
+            create_and_send_notification(
+                recipient=chef,
+                title="Classe a valider",
+                body=f"{user.get_full_name() or user.email} declare representer "
+                     f"{niveau.filiere.nom_filiere} {niveau.nom_niveau} "
+                     f"en {annee_active.libelle}.",
+                notification_type='CLASSE_A_VALIDER',
+            )
 
         return Response({
-            "detail": "Niveau mis a jour avec succes.",
-            "niveau": {
-                "id": niveau.id,
-                "nom_niveau": niveau.nom_niveau,
-                "filiere_nom": niveau.filiere.nom_filiere if niveau.filiere else None,
-            }
-        }, status=status.HTTP_200_OK)
+            "detail": "Votre classe a ete declaree. Elle doit etre validee par "
+                      "le chef de departement avant que vous puissiez soumettre "
+                      "des fiches.",
+            "mandat": {
+                "statut": mandat.statut,
+                "annee": annee_active.libelle,
+                "niveau": niveau.nom_niveau,
+                "filiere": niveau.filiere.nom_filiere if niveau.filiere else None,
+            },
+        }, status=status.HTTP_200_OK if not cree else status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated],
+            url_path='mandats-en-attente')
+    def mandats_en_attente(self, request):
+        """Classes declarees par les delegues et restant a valider."""
+        from academic.models import AnneeAcademique, MandatDelegue, StatutMandat
+
+        approbateur = request.user
+        est_admin = (approbateur.roles.filter(nom_role=Role.SUPER_ADMIN).exists()
+                     or approbateur.is_superuser)
+        est_chef = approbateur.roles.filter(nom_role=Role.CHEF_DEPARTEMENT).exists()
+        if not (est_admin or est_chef):
+            return Response({"detail": "Acces refuse."}, status=status.HTTP_403_FORBIDDEN)
+
+        annee = AnneeAcademique.objects.filter(est_active=True).first()
+        if not annee:
+            return Response([], status=status.HTTP_200_OK)
+
+        mandats = (
+            MandatDelegue.objects
+            .filter(annee_academique=annee, statut=StatutMandat.EN_ATTENTE)
+            .select_related('utilisateur', 'niveau__filiere__departement')
+        )
+        if est_chef and not est_admin:
+            departement = getattr(approbateur, 'departement_gere', None)
+            if not departement:
+                return Response([], status=status.HTTP_200_OK)
+            mandats = mandats.filter(niveau__filiere__departement=departement)
+
+        resultat = []
+        for m in mandats:
+            # La classe de l'an passe aide le chef a trancher : un delegue qui
+            # passe de L3 a M1 est attendu, un saut de filiere l'est moins.
+            precedent = (
+                MandatDelegue.objects
+                .filter(utilisateur=m.utilisateur, statut=StatutMandat.APPROUVE)
+                .exclude(annee_academique=annee)
+                .select_related('niveau__filiere', 'annee_academique')
+                .order_by('-annee_academique__libelle')
+                .first()
+            )
+            resultat.append({
+                'id': m.id,
+                'utilisateur_id': m.utilisateur_id,
+                'nom_complet': m.utilisateur.get_full_name() or m.utilisateur.email,
+                'email': m.utilisateur.email,
+                'niveau_id': m.niveau_id,
+                'classe_demandee': f"{m.niveau.filiere.nom_filiere} {m.niveau.nom_niveau}"
+                                   if m.niveau.filiere else m.niveau.nom_niveau,
+                'classe_precedente': (
+                    f"{precedent.niveau.filiere.nom_filiere} {precedent.niveau.nom_niveau} "
+                    f"({precedent.annee_academique.libelle})"
+                    if precedent and precedent.niveau.filiere else None
+                ),
+                'date_debut': m.date_debut,
+            })
+        return Response(resultat, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated],
+            url_path='approuver-mandat')
+    def approuver_mandat(self, request, pk=None):
+        """Valider la classe declaree par un delegue pour l'annee en cours."""
+        from academic.models import AnneeAcademique, MandatDelegue, StatutMandat
+
+        approbateur = request.user
+        est_admin = (approbateur.roles.filter(nom_role=Role.SUPER_ADMIN).exists()
+                     or approbateur.is_superuser)
+        est_chef = approbateur.roles.filter(nom_role=Role.CHEF_DEPARTEMENT).exists()
+        if not (est_admin or est_chef):
+            return Response({"detail": "Acces refuse."}, status=status.HTTP_403_FORBIDDEN)
+
+        annee = AnneeAcademique.objects.filter(est_active=True).first()
+        delegue = self.get_object()
+        mandat = (
+            MandatDelegue.objects
+            .filter(utilisateur=delegue, annee_academique=annee)
+            .select_related('niveau__filiere__departement')
+            .first()
+        )
+        if not mandat:
+            return Response({"detail": "Ce delegue n'a declare aucune classe pour "
+                                       "l'annee en cours."},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        if est_chef and not est_admin:
+            departement = getattr(approbateur, 'departement_gere', None)
+            attendu = mandat.niveau.filiere.departement if mandat.niveau.filiere else None
+            if not departement or attendu != departement:
+                return Response({"detail": "Cette classe ne releve pas de votre "
+                                           "departement."},
+                                status=status.HTTP_403_FORBIDDEN)
+
+        mandat.statut = StatutMandat.APPROUVE
+        mandat.motif_refus = ''
+        mandat.approuve_par = approbateur
+        mandat.save()
+
+        # niveau_represente reste tenu a jour : les ecrans et les exports qui
+        # s'appuient encore dessus continuent de fonctionner.
+        delegue.niveau_represente = mandat.niveau
+        delegue.save(update_fields=['niveau_represente'])
+
+        create_and_send_notification(
+            recipient=delegue,
+            title="Classe validee",
+            body=f"Votre classe pour {annee.libelle} a ete validee. "
+                 f"Vous pouvez desormais soumettre vos fiches.",
+            notification_type='CLASSE_VALIDEE',
+        )
+        return Response({"detail": "Classe validee."}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated],
+            url_path='refuser-mandat')
+    def refuser_mandat(self, request, pk=None):
+        """Refuser la classe declaree, en disant pourquoi."""
+        from academic.models import AnneeAcademique, MandatDelegue, StatutMandat
+
+        approbateur = request.user
+        est_admin = (approbateur.roles.filter(nom_role=Role.SUPER_ADMIN).exists()
+                     or approbateur.is_superuser)
+        est_chef = approbateur.roles.filter(nom_role=Role.CHEF_DEPARTEMENT).exists()
+        if not (est_admin or est_chef):
+            return Response({"detail": "Acces refuse."}, status=status.HTTP_403_FORBIDDEN)
+
+        motif = (request.data.get('motif') or '').strip()
+        if not motif:
+            return Response({"motif": "Indiquez le motif du refus."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        annee = AnneeAcademique.objects.filter(est_active=True).first()
+        delegue = self.get_object()
+        mandat = MandatDelegue.objects.filter(
+            utilisateur=delegue, annee_academique=annee
+        ).first()
+        if not mandat:
+            return Response({"detail": "Aucune classe declaree."},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        mandat.statut = StatutMandat.REFUSE
+        mandat.motif_refus = motif
+        mandat.approuve_par = approbateur
+        mandat.save()
+
+        create_and_send_notification(
+            recipient=delegue,
+            title="Classe refusee",
+            body=f"Votre classe pour {annee.libelle} a ete refusee : {motif}",
+            notification_type='CLASSE_REFUSEE',
+        )
+        return Response({"detail": "Classe refusee."}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated], url_path='mes-utilisateurs')
     def mes_utilisateurs(self, request):
