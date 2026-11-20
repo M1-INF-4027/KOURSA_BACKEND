@@ -22,6 +22,24 @@ if not SECRET_KEY:
 
 DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 
+# Durcissement applique hors developpement. Aucune de ces directives n'etait
+# posee : le site repondait en clair si on l'y appelait, les cookies de session
+# de l'administration Django voyageaient sans l'attribut Secure, et rien
+# n'interdisait l'inclusion de la page dans un cadre tiers.
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    # nginx termine le TLS et transmet l'en-tete : sans cela Django se croit
+    # en clair et boucle sur sa propre redirection.
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY'
+    SECURE_REFERRER_POLICY = 'same-origin'
+
 ALLOWED_HOSTS = []
 RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
 ALLOWED_HOSTS_ENV = os.environ.get('ALLOWED_HOSTS', '')
@@ -157,7 +175,10 @@ AUTH_PASSWORD_VALIDATORS = [
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        # Variante qui fait respecter le changement d'un mot de passe
+        # provisoire : sans elle, le drapeau n'etait lu que par les interfaces
+        # et l'API repondait normalement.
+        'users.authentication.JWTAvecMotDePasseAJour',
     ),
     'DEFAULT_FILTER_BACKENDS': ['django_filters.rest_framework.DjangoFilterBackend'],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',

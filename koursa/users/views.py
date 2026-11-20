@@ -126,6 +126,14 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         """Approuver un utilisateur en attente (délégué ou enseignant)"""
         approbateur = request.user
 
+        # Un compte qui n'est pas lui-meme actif n'approuve personne. Le
+        # controle de role ci-dessous ne lit pas `statut`, et rien d'autre ne
+        # le faisait sur ce chemin : un chef encore en attente de validation
+        # pouvait donc valider les comptes des autres.
+        if approbateur.statut != StatutCompte.ACTIF and not approbateur.is_superuser:
+            return Response({"detail": "Votre compte n'est pas actif."},
+                            status=status.HTTP_403_FORBIDDEN)
+
         # Seuls le Super Admin et le Chef de Département peuvent approuver
         is_super_admin = approbateur.roles.filter(nom_role=Role.SUPER_ADMIN).exists() or approbateur.is_superuser
         is_hod = approbateur.roles.filter(nom_role=Role.CHEF_DEPARTEMENT).exists()
@@ -404,7 +412,8 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         est_admin = (approbateur.roles.filter(nom_role=Role.SUPER_ADMIN).exists()
                      or approbateur.is_superuser)
         est_chef = approbateur.roles.filter(nom_role=Role.CHEF_DEPARTEMENT).exists()
-        if not (est_admin or est_chef):
+        actif = approbateur.statut == StatutCompte.ACTIF or approbateur.is_superuser
+        if not actif or not (est_admin or est_chef):
             return Response({"detail": "Acces refuse."}, status=status.HTTP_403_FORBIDDEN)
 
         annee = AnneeAcademique.objects.filter(est_active=True).first()
@@ -461,7 +470,8 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         est_admin = (approbateur.roles.filter(nom_role=Role.SUPER_ADMIN).exists()
                      or approbateur.is_superuser)
         est_chef = approbateur.roles.filter(nom_role=Role.CHEF_DEPARTEMENT).exists()
-        if not (est_admin or est_chef):
+        actif = approbateur.statut == StatutCompte.ACTIF or approbateur.is_superuser
+        if not actif or not (est_admin or est_chef):
             return Response({"detail": "Acces refuse."}, status=status.HTTP_403_FORBIDDEN)
 
         annee = AnneeAcademique.objects.filter(est_active=True).first()
@@ -514,7 +524,8 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         est_admin = (approbateur.roles.filter(nom_role=Role.SUPER_ADMIN).exists()
                      or approbateur.is_superuser)
         est_chef = approbateur.roles.filter(nom_role=Role.CHEF_DEPARTEMENT).exists()
-        if not (est_admin or est_chef):
+        actif = approbateur.statut == StatutCompte.ACTIF or approbateur.is_superuser
+        if not actif or not (est_admin or est_chef):
             return Response({"detail": "Acces refuse."}, status=status.HTTP_403_FORBIDDEN)
 
         motif = (request.data.get('motif') or '').strip()
@@ -690,6 +701,23 @@ class RoleViewSet(viewsets.ModelViewSet):
         else:
             permission_classes = [IsSuperAdmin]
         return [permission() for permission in permission_classes]
+
+    def get_queryset(self):
+        """
+        Un visiteur ne voit que les roles qu'il peut demander.
+
+        Le formulaire d'inscription a besoin de cette liste avant toute
+        connexion, elle reste donc publique — mais amputee des roles
+        privilegies, dont l'identifiant servait a se nommer administrateur
+        lors d'une inscription Google.
+        """
+        utilisateur = self.request.user
+        if utilisateur.is_authenticated and (
+            utilisateur.is_superuser
+            or utilisateur.roles.filter(nom_role=Role.SUPER_ADMIN).exists()
+        ):
+            return Role.objects.all()
+        return Role.objects.filter(nom_role__in=[Role.DELEGUE, Role.ENSEIGNANT])
     
 
 class EmailWhitelistViewSet(viewsets.ModelViewSet):
@@ -992,10 +1020,19 @@ class GoogleAuthView(APIView):
         niveau_represente = request.data.get('niveau_represente')
 
         try:
-            roles = Role.objects.filter(id__in=roles_ids)
+            # Une inscription libre ne peut donner que les deux roles qui
+            # s'auto-attribuent. Sans ce filtre, n'importe quel compte Google
+            # obtenait le role demande dans la requete : l'identifiant du role
+            # Super Administrateur etant lisible publiquement, il suffisait de
+            # le passer ici pour devenir administrateur du systeme, jeton
+            # compris, en un seul appel.
+            roles = Role.objects.filter(
+                id__in=roles_ids, nom_role__in=[Role.DELEGUE, Role.ENSEIGNANT]
+            )
             if not roles.exists():
                 return Response(
-                    {'detail': 'Roles invalides.'},
+                    {'detail': "Seuls les roles Delegue et Enseignant peuvent etre "
+                               "demandes a l'inscription."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 

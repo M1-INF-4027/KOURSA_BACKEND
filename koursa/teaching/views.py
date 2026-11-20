@@ -42,6 +42,24 @@ class UniteEnseignementViewSet(viewsets.ModelViewSet):
     serializer_class = UniteEnseignementSerializer
     permission_classes = [IsAuthenticated]
 
+    def get_permissions(self):
+        """
+        Lire est ouvert a tous les comptes, ecrire ne l'est pas.
+
+        Seul IsAuthenticated gardait cette vue : un delegue pouvait creer un
+        cours, en supprimer un, ou s'inscrire lui-meme comme enseignant d'une
+        unite — et valider ensuite ses propres fiches, la permission de
+        validation ne verifiant que « etre l'enseignant de l'UE ».
+        """
+        # On ne vise que les verbes d'ecriture du CRUD. Les actions
+        # personnalisees (import, suppression en masse, mes-delegues) portent
+        # deja leur propre controle, et mes-delegues doit rester ouvert aux
+        # enseignants.
+        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+            from users.permissions import IsHoDOrSuperAdmin
+            return [IsHoDOrSuperAdmin()]
+        return [IsAuthenticated()]
+
     def get_queryset(self):
         user = self.request.user
         if not user.is_authenticated:
@@ -598,6 +616,24 @@ class FicheSuiviViewSet(viewsets.ModelViewSet):
                 {"detail": "Aucun semestre actif. Veuillez contacter l'administrateur."}
             )
 
+        # Un delegue ne declare que pour sa propre classe, et seulement une
+        # fois son mandat approuve. Rien ne le verifiait : il pouvait deposer
+        # une fiche sur n'importe quelle unite d'enseignement, y compris d'un
+        # autre departement, et le faire sans mandat — alors meme que
+        # l'interface lui annonce le contraire.
+        if is_delegue and not (is_chef or is_admin):
+            mandat = user.mandat_actif()
+            if not mandat:
+                raise PermissionDenied(
+                    "Votre classe n'a pas encore ete validee par le chef de "
+                    "departement : vous ne pouvez pas encore soumettre de fiche."
+                )
+            ue = serializer.validated_data.get('ue')
+            if ue is not None and not ue.niveaux.filter(pk=mandat.niveau_id).exists():
+                raise PermissionDenied(
+                    "Ce cours ne releve pas de la classe que vous representez."
+                )
+
         if is_chef or is_admin:
             # Le chef/admin specifie le delegue dans la requete
             delegue_id = self.request.data.get('delegue')
@@ -736,9 +772,20 @@ class FicheSuiviViewSet(viewsets.ModelViewSet):
             else:
                 return Response({"detail": "Authentification requise."}, status=status.HTTP_401_UNAUTHORIZED)
 
-        fiche = FicheSuivi.objects.select_related(
-            'ue', 'delegue', 'enseignant', 'salle', 'semestre__annee_academique',
-        ).prefetch_related('ue__niveaux__filiere__departement__faculte').get(pk=pk)
+        # Le queryset de la vue cloisonne par delegue, par enseignant et par
+        # departement. L'interroger directement court-circuitait ce
+        # cloisonnement : n'importe quel compte telechargeait le PDF de
+        # n'importe quelle fiche validee de l'universite, et un identifiant
+        # inconnu levait DoesNotExist, donc une erreur 500.
+        try:
+            fiche = self.get_queryset().select_related(
+                'ue', 'delegue', 'enseignant', 'salle', 'semestre__annee_academique',
+            ).prefetch_related(
+                'ue__niveaux__filiere__departement__faculte'
+            ).get(pk=pk)
+        except FicheSuivi.DoesNotExist:
+            return Response({"detail": "Fiche introuvable."},
+                            status=status.HTTP_404_NOT_FOUND)
 
         # Chef de departement et Super Admin peuvent telecharger quel que soit le statut
         is_admin_or_chef = (

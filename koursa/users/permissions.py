@@ -1,22 +1,39 @@
 from rest_framework.permissions import BasePermission
-from .models import Role
+from .models import Role, StatutCompte
 from teaching.models import StatutFiche
+
+
+def compte_habilite(requete):
+    """
+    Le compte est-il en mesure d'exercer un role ?
+
+    Les permissions testaient `is_active`, le champ herite de Django, qui vaut
+    vrai des la creation et que rien ne relie au circuit d'approbation. Un
+    compte EN_ATTENTE franchissait donc toutes les permissions privilegiees :
+    l'approbation par le chef n'avait d'effet que sur l'affichage.
+
+    C'est `statut` qui porte cette decision, et c'est lui qu'on lit ici.
+    """
+    utilisateur = getattr(requete, 'user', None)
+    if not utilisateur or not utilisateur.is_authenticated or not utilisateur.is_active:
+        return False
+    return utilisateur.statut == StatutCompte.ACTIF
 
 class IsSuperAdmin(BasePermission):
     def has_permission(self, request, view):
-        if not request.user or not request.user.is_authenticated or not request.user.is_active:
+        if not compte_habilite(request):
             return False
         return request.user.roles.filter(nom_role=Role.SUPER_ADMIN).exists()
 
 class IsHoD(BasePermission):
     def has_permission(self, request, view):
-        if not request.user or not request.user.is_authenticated or not request.user.is_active:
+        if not compte_habilite(request):
             return False
         return request.user.roles.filter(nom_role=Role.CHEF_DEPARTEMENT).exists()
 
 class IsHoDOrSuperAdmin(BasePermission):
     def has_permission(self, request, view):
-        if not request.user or not request.user.is_authenticated or not request.user.is_active:
+        if not compte_habilite(request):
             return False
         return request.user.roles.filter(
             nom_role__in=[Role.CHEF_DEPARTEMENT, Role.SUPER_ADMIN]
@@ -24,7 +41,7 @@ class IsHoDOrSuperAdmin(BasePermission):
 
 class IsEnseignant(BasePermission):
     def has_permission(self, request, view):
-        if not request.user or not request.user.is_authenticated or not request.user.is_active:
+        if not compte_habilite(request):
             return False
         return request.user.roles.filter(
             nom_role__in=[Role.ENSEIGNANT, Role.CHEF_DEPARTEMENT]
@@ -32,7 +49,7 @@ class IsEnseignant(BasePermission):
 
 class IsDelegue(BasePermission):
     def has_permission(self, request, view):
-        if not request.user or not request.user.is_authenticated or not request.user.is_active:
+        if not compte_habilite(request):
             return False
         return request.user.roles.filter(nom_role=Role.DELEGUE).exists()
     
